@@ -4,11 +4,30 @@ Claude Code Plugin für die [Flowcrafter](https://github.com/wundii/flowcrafter)
 
 ## Installation
 
-```bash
-/install-plugin https://github.com/wundii/flowcrafter-claude
+Die Installation erfolgt in zwei Schritten in Claude Code:
+
+**1. Marketplace registrieren:**
+```
+/plugin marketplace add wundii/flowcrafter-claude
 ```
 
-Nach der Installation steht das Plugin in jedem Projekt automatisch zur Verfügung.
+**2. Plugin installieren:**
+```
+/plugin install flowcrafter@flowcrafter-claude
+```
+
+Beim Installieren wählt Claude Code den Scope:
+- **user** — steht in allen Projekten zur Verfügung (empfohlen)
+- **project** — nur im aktuellen Projekt (`.claude/settings.json`)
+- **local** — nur lokal, nicht committed
+
+### Alternativ: Interaktiver Plugin-Manager
+
+```
+/plugin
+```
+
+Im Tab **Discover** das Plugin suchen und per Enter installieren.
 
 ## Skills
 
