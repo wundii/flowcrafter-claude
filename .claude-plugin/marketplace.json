@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "flowcrafter-claude",
+  "description": "Claude Code Plugin für die Flowcrafter PHP Workflow-Engine",
+  "owner": {
+    "name": "Andreas Wunderwald",
+    "email": "wundii@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "flowcrafter",
+      "description": "Code generation and analysis tools for the Flowcrafter PHP message-driven workflow engine. Generates Flows, Stubs, Messages, and Schedules with framework detection for Symfony and pure PHP projects.",
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/wundii/flowcrafter-claude"
+    }
+  ]
+}
