@@ -2,12 +2,12 @@
 name: flowcrafter
 description: >
   This skill should be used when the user discusses Flowcrafter, mentions
-  "FlowBuilder", "StubInterface", "FlowInterface", "MessageInitInterface",
+  "FlowBuilder", "StepInterface", "FlowInterface", "MessageInitInterface",
   "MessageDataInterface", "MessageReturnInterface", "AbstractMessage",
   "AbstractSchedule", "FlowSchedule", "FlowRunner", "FlowObserver",
-  asks to "create a flow", "add a stub", "wire up messages",
+  asks to "create a flow", "add a step", "wire up messages",
   "build a workflow", "build a processing pipeline", "define a schedule",
-  or when PHP files named *Flow.php, *Stub.php, *Message.php,
+  or when PHP files named *Flow.php, *Step.php, *Message.php,
   or *Schedule.php are being discussed. Also trigger when the user
   imports from "Wundii\Flowcrafter\" namespace.
 version: 1.0.0
@@ -26,7 +26,7 @@ Typisierte, immutable Datenobjekte. Drei Rollen:
 | Interface | Namespace | Zweck |
 |---|---|---|
 | `MessageInitInterface` | `Wundii\Flowcrafter\Interface\MessageInitInterface` | Eintrittspunkt des Flows. Auslöser-Input. |
-| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten zwischen Stubs. Muss downstream konsumiert werden. |
+| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten zwischen Steps. Muss downstream konsumiert werden. |
 | `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Output des Flows. Wird an den Aufrufer zurückgegeben. |
 
 Alle Messages extends `Wundii\Flowcrafter\AbstractMessage` und sind `readonly class` mit Constructor Property Promotion.
@@ -44,20 +44,20 @@ readonly class CityRequestMessage extends AbstractMessage implements MessageInit
 
 Nur auf `private` + Getter wechseln wenn der User es explizit wünscht.
 
-### Stubs
+### Steps
 
-Zustandslose Verarbeitungseinheiten. Jeder Stub:
+Zustandslose Verarbeitungseinheiten. Jeder Step:
 
-- Implementiert `Wundii\Flowcrafter\Interface\StubInterface`
+- Implementiert `Wundii\Flowcrafter\Interface\StepInterface`
 - Deklariert verbrauchte Messages als typisierte Constructor-Parameter
 - Deklariert Service-Abhängigkeiten als weitere Constructor-Parameter (`private readonly`)
 - Gibt mögliche Return-Types in `returnTypes(): array` als FQCN-Array an
 - Implementiert `process()` mit der eigentlichen Logik
 
-Flowcrafter erkennt per Reflection welche Messages ein Stub benötigt. Constructor-Parameter mit Message-Typen → auto-injected. Andere Typen → per DI-Container.
+Flowcrafter erkennt per Reflection welche Messages ein Step benötigt. Constructor-Parameter mit Message-Typen → auto-injected. Andere Typen → per DI-Container.
 
 ```php
-class FetchWeatherStub implements StubInterface
+class FetchWeatherStep implements StepInterface
 {
     public function __construct(
         private readonly CityRequestMessage $cityRequestMessage,
@@ -84,7 +84,7 @@ Workflow-Blueprints. Ein Flow:
 - Implementiert `Wundii\Flowcrafter\Interface\FlowInterface`
 - Deklariert `schema(): FlowSchema` via `FlowBuilder`-DSL
 - Hat einen Type-String im Format `flow.<name>.v<N>` (Pflicht!)
-- Verbindet Init-Message → Stubs → Return-Message
+- Verbindet Init-Message → Steps → Return-Message
 
 ```php
 class WeatherComfortFlow implements FlowInterface
@@ -97,9 +97,9 @@ class WeatherComfortFlow implements FlowInterface
             WeatherReportMessage::class,
         );
 
-        $flowBuilder->addStub(FetchWeatherStub::class);
-        $flowBuilder->addStub(ConvertWeatherStub::class);
-        $flowBuilder->addStub(SummaryReportStub::class);
+        $flowBuilder->addStep(FetchWeatherStep::class);
+        $flowBuilder->addStep(ConvertWeatherStep::class);
+        $flowBuilder->addStep(SummaryReportStep::class);
 
         return $flowBuilder->build();
     }
@@ -138,18 +138,18 @@ $flowBuilder = new FlowBuilder(
     InitMessage::class,      // MessageInitInterface FQCN
     ReturnMessage::class,    // MessageReturnInterface FQCN (optional)
 );
-$flowBuilder->addStub(StubA::class);
-$flowBuilder->addStub(StubB::class);
+$flowBuilder->addStep(StepA::class);
+$flowBuilder->addStep(StepB::class);
 return $flowBuilder->build();
 ```
 
 ## FlowBuilder Validierungsregeln (bei `build()`)
 
 1. **Type-String-Format**: muss `/^flow\..+\.v\d+$/` matchen
-2. **Init-Message konsumiert**: mindestens ein Stub muss die Init-Message als Constructor-Parameter haben
-3. **Keine Duplikate**: dieselbe Stub-Klasse darf nicht zweimal per `addStub()` hinzugefügt werden
+2. **Init-Message konsumiert**: mindestens ein Step muss die Init-Message als Constructor-Parameter haben
+3. **Keine Duplikate**: dieselbe Step-Klasse darf nicht zweimal per `addStep()` hinzugefügt werden
 4. **Kein Zyklus**: kein Zyklus im Message-Dependency-Graph
-5. **Alle Stubs erreichbar**: jeder Stub muss vom Init-Stub aus über Message-Ketten erreichbar sein
+5. **Alle Steps erreichbar**: jeder Step muss vom Init-Step aus über Message-Ketten erreichbar sein
 6. **MessageDataInterface abgedeckt**: jeder `MessageDataInterface`-Return-Type muss downstream konsumiert werden
 
 ## FlowGroup — Flows im Dashboard gruppieren
@@ -178,10 +178,10 @@ use Wundii\Flowcrafter\EmptyInitMessage;
 $flowBuilder = new FlowBuilder('flow.my-flow.v1', EmptyInitMessage::class);
 ```
 
-Im ersten Stub **muss** das `EmptyInitMessage`-Property `public readonly` sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
+Im ersten Step **muss** das `EmptyInitMessage`-Property `public readonly` sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
 
 ```php
-class MyFirstStub implements StubInterface
+class MyFirstStep implements StepInterface
 {
     public function __construct(
         public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
@@ -196,7 +196,7 @@ use Wundii\Flowcrafter\AbstractMessage;
 use Wundii\Flowcrafter\FlowBuilder;
 use Wundii\Flowcrafter\FlowSchema;
 use Wundii\Flowcrafter\Interface\FlowInterface;
-use Wundii\Flowcrafter\Interface\StubInterface;
+use Wundii\Flowcrafter\Interface\StepInterface;
 use Wundii\Flowcrafter\Interface\MessageInitInterface;
 use Wundii\Flowcrafter\Interface\MessageDataInterface;
 use Wundii\Flowcrafter\Interface\MessageReturnInterface;
@@ -213,7 +213,7 @@ use Wundii\Flowcrafter\Schedule\AbstractSchedule;
 src/
 └── Flowcrafter/
     ├── Flows/          ← *Flow.php
-    ├── Stubs/          ← *Stub.php
+    ├── Steps/          ← *Step.php
     ├── Messages/       ← *Message.php
     └── Schedules/      ← *Schedule.php
 ```
@@ -222,7 +222,7 @@ src/
 ```
 src/
 ├── Flow/
-├── Stub/
+├── Step/
 ├── Message/
 └── Schedule/
 ```
@@ -235,11 +235,11 @@ Beim Generieren von Flowcrafter-Code immer:
 
 - `declare(strict_types=1)` setzen
 - Messages: `readonly class` mit Constructor Property Promotion, Properties **`public`** (kein Getter) — außer der User wünscht explizit `private` + Getter
-- Stubs: reguläre Klasse, `private readonly` Constructor-Parameter
+- Steps: reguläre Klasse, `private readonly` Constructor-Parameter
 - Flows: reguläre Klasse mit `public static function schema(): FlowSchema`
 - Schedules: reguläre Klasse mit `public function process(): void`
 - Alle Parameter und Return-Types explizit typisieren
-- Suffixe: `*Message`, `*Stub`, `*Flow`, `*Schedule`
+- Suffixe: `*Message`, `*Step`, `*Flow`, `*Schedule`
 
 ## Framework-Detection
 
@@ -248,7 +248,7 @@ Vor der Code-Generierung in einem unbekannten Projekt:
 1. `composer.json` lesen — Flowcrafter-Paket bestätigen, PHP-Version prüfen
 2. `composer.json` auf `symfony/framework-bundle` prüfen → Symfony-Projekt
 3. Glob auf `src/**/*Flow.php` → bestehende Flows und Namespace-Muster
-4. Einen bestehenden Stub und eine Message lesen → Namespace-Prefix und Code-Stil bestätigen
+4. Einen bestehenden Step und eine Message lesen → Namespace-Prefix und Code-Stil bestätigen
 
 ## Weiterführende Details
 

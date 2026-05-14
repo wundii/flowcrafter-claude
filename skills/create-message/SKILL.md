@@ -23,8 +23,8 @@ Parse als: `<message-name>` (Pflicht), `<init|data|return>` (Pflicht — Message
 
 | Interface | Namespace | Zweck | Regel |
 |---|---|---|---|
-| `MessageInitInterface` | `Wundii\Flowcrafter\Interface\MessageInitInterface` | Flow-Eintrittspunkt | Genau eine pro Flow. Wird vom ersten Stub konsumiert. |
-| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten | Muss von einem downstream Stub konsumiert werden. |
+| `MessageInitInterface` | `Wundii\Flowcrafter\Interface\MessageInitInterface` | Flow-Eintrittspunkt | Genau eine pro Flow. Wird vom ersten Step konsumiert. |
+| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten | Muss von einem downstream Step konsumiert werden. |
 | `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Flow-Output | Genau eine pro Flow. Muss nicht weiter konsumiert werden. |
 
 ## Schritt 1: Projekt-Kontext erkennen
@@ -91,10 +91,10 @@ $flowBuilder = new FlowBuilder(
 );
 ```
 
-Im ersten Stub: das `EmptyInitMessage`-Property **muss `public readonly`** sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
+Im ersten Step: das `EmptyInitMessage`-Property **muss `public readonly`** sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
 
 ```php
-class MyFirstStub implements StubInterface
+class MyFirstStep implements StepInterface
 {
     public function __construct(
         public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
@@ -112,5 +112,5 @@ class MyFirstStub implements StubInterface
 
 1. Generierten Code anzeigen und Interface-Wahl begründen
 2. Datei schreiben mit dem Write-Tool
-3. Hinweisen welche Stubs diese Message konsumieren sollten
+3. Hinweisen welche Steps diese Message konsumieren sollten
 4. Falls Init- oder Return-Message: `/create-flow` empfehlen um den Flow zu definieren

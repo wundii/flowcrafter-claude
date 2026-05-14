@@ -1,9 +1,9 @@
-# Stub Patterns
+# Step Patterns
 
-## Einfacher Transformation-Stub (keine externen Services)
+## Einfacher Transformation-Step (keine externen Services)
 
 ```php
-class ConvertWeatherStub implements StubInterface
+class ConvertWeatherStep implements StepInterface
 {
     public function __construct(
         private readonly RawWeatherMessage $rawWeather,
@@ -24,10 +24,10 @@ class ConvertWeatherStub implements StubInterface
 }
 ```
 
-## Stub mit Service-Dependency (Symfony Autowiring)
+## Step mit Service-Dependency (Symfony Autowiring)
 
 ```php
-class FetchWeatherStub implements StubInterface
+class FetchWeatherStep implements StepInterface
 {
     public function __construct(
         private readonly CityRequestMessage $cityRequestMessage,  // Message — auto-injected
@@ -40,7 +40,7 @@ In pure PHP: `$apiClient` muss im `dependenciesInjection`-Array des `FlowRunner`
 
 ## Mehrere Return-Types (Conditional Branching)
 
-Beide Types müssen downstream von einem Stub konsumiert werden (oder `MessageReturnInterface` sein):
+Beide Types müssen downstream von einem Step konsumiert werden (oder `MessageReturnInterface` sein):
 
 ```php
 public function returnTypes(): array
@@ -59,14 +59,14 @@ public function process(): MessageDataInterface
 
 ## Fan-in: Mehrere Messages konsumieren
 
-Ein Stub kann mehrere Messages konsumieren — er wird erst ausgeführt wenn alle upstream Messages vorliegen:
+Ein Step kann mehrere Messages konsumieren — er wird erst ausgeführt wenn alle upstream Messages vorliegen:
 
 ```php
-class ResultProcessStub implements StubInterface
+class ResultProcessStep implements StepInterface
 {
     public function __construct(
-        private readonly PvOutputMessage $pvOutput,          // von PvAnlageStub
-        private readonly BatteryStatusMessage $batteryStatus, // von BatteriespeicherStub
+        private readonly PvOutputMessage $pvOutput,          // von PvAnlageStep
+        private readonly BatteryStatusMessage $batteryStatus, // von BatteriespeicherStep
     ) {}
 
     public function returnTypes(): array
@@ -76,14 +76,14 @@ class ResultProcessStub implements StubInterface
 }
 ```
 
-Beide `PvOutputMessage` und `BatteryStatusMessage` müssen von anderen Stubs im selben Flow produziert werden.
+Beide `PvOutputMessage` und `BatteryStatusMessage` müssen von anderen Steps im selben Flow produziert werden.
 
-## Terminaler Stub (Flow-Output)
+## Terminaler Step (Flow-Output)
 
-Der Stub gibt die Return-Message des Flows zurück:
+Der Step gibt die Return-Message des Flows zurück:
 
 ```php
-class SummaryReportStub implements StubInterface
+class SummaryReportStep implements StepInterface
 {
     public function __construct(
         private readonly ActivityPlanMessage $activityPlan,
@@ -105,7 +105,7 @@ class SummaryReportStub implements StubInterface
 
 ## Bool-Rückgabe (FlowResult)
 
-Stubs können auch `bool` zurückgeben — wird als `FlowResult` aufgezeichnet:
+Steps können auch `bool` zurückgeben — wird als `FlowResult` aufgezeichnet:
 
 ```php
 public function process(): bool
@@ -117,10 +117,10 @@ public function process(): bool
 
 `returnTypes()` kann in diesem Fall `[]` zurückgeben oder weggelassen werden (leeres Array).
 
-## Stub für pure PHP (kein DI-Container)
+## Step für pure PHP (kein DI-Container)
 
 ```php
-class ManualServiceStub implements StubInterface
+class ManualServiceStep implements StepInterface
 {
     public function __construct(
         private readonly SomeMessage $message,

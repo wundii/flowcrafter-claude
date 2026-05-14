@@ -33,11 +33,11 @@ Aus der `schema()`-Methode extrahieren:
 1. **Type-String**: erstes Argument von `FlowBuilder`
 2. **Init-Message-Klasse**: zweites Argument
 3. **Return-Message-Klasse**: drittes Argument (falls vorhanden)
-4. **Alle Stubs**: alle `addStub()`-Aufrufe
+4. **Alle Steps**: alle `addStep()`-Aufrufe
 
-Für jeden referenzierten Stub:
-1. Stub-Datei lokalisieren (Glob + Grep)
-2. Stub lesen und extrahieren:
+Für jeden referenzierten Step:
+1. Step-Datei lokalisieren (Glob + Grep)
+2. Step lesen und extrahieren:
    - Constructor-Parameter und deren Typen
    - Message-Parameter (Types die AbstractMessage extenden oder Message-Interface implementieren)
    - Service-Parameter (alle anderen)
@@ -51,38 +51,38 @@ Für jeden referenzierten Stub:
 - Flag: falsches Format, fehlende Version, Leerzeichen
 
 ### [2] Init-Message konsumiert
-- Prüfe: mindestens ein Stub hat die Init-Message als Constructor-Parameter?
-- Flag: kein Stub konsumiert die Init-Message
+- Prüfe: mindestens ein Step hat die Init-Message als Constructor-Parameter?
+- Flag: kein Step konsumiert die Init-Message
 
 ### [3] Keine Duplikate
-- Prüfe: kein Stub-FQCN taucht zweimal in `addStub()` auf
+- Prüfe: kein Step-FQCN taucht zweimal in `addStep()` auf
 
-### [4] Alle Stubs erreichbar (BFS)
-- Baue Dependency-Graph: Stubs sind Knoten, Messages sind Kanten
-- Starte BFS vom Stub der Init-Message konsumiert
-- Flag: Stubs die nicht erreicht werden
+### [4] Alle Steps erreichbar (BFS)
+- Baue Dependency-Graph: Steps sind Knoten, Messages sind Kanten
+- Starte BFS vom Step der Init-Message konsumiert
+- Flag: Steps die nicht erreicht werden
 
 ### [5] Kein Zyklus (DFS)
 - Führe DFS auf dem Graph durch (white/gray/black)
 - Flag: erkannte Zyklen mit Pfad-Angabe
 
 ### [6] MessageDataInterface abgedeckt
-- Für jeden Stub: `returnTypes()` durchgehen
+- Für jeden Step: `returnTypes()` durchgehen
 - Für jeden Return-Type der `MessageDataInterface` implementiert (aber NICHT `MessageReturnInterface`):
-  - Prüfe: hat ein anderer Stub diesen Type als Constructor-Parameter?
+  - Prüfe: hat ein anderer Step diesen Type als Constructor-Parameter?
 - Flag: nicht konsumierte `MessageDataInterface`-Types
 
 ### [7] Return-Message valide
-- Falls Return-Message deklariert: muss in `returnTypes()` eines Stubs erscheinen
+- Falls Return-Message deklariert: muss in `returnTypes()` eines Steps erscheinen
 - Die Klasse muss `MessageReturnInterface` implementieren
 
 ## Schritt 4: Verbesserungsvorschläge
 
-1. **Fehlende `readonly`**: Sind Stub-Klassen und Messages ohne `readonly`? (PHP 8.2+)
+1. **Fehlende `readonly`**: Sind Step-Klassen und Messages ohne `readonly`? (PHP 8.2+)
 2. **Typsicherheit**: Gibt es `mixed`, fehlende Return-Types, oder fehlende Parameter-Types?
-3. **Single Responsibility**: Stubs mit langen `process()`-Methoden oder mehrdeutigem Namen
+3. **Single Responsibility**: Steps mit langen `process()`-Methoden oder mehrdeutigem Namen
 4. **Konsistenz**: Stimmen `returnTypes()` und `process()` Return-Type überein?
-5. **Naming**: Folgen Klassen den `*Message`, `*Stub`, `*Flow` Suffixen?
+5. **Naming**: Folgen Klassen den `*Message`, `*Step`, `*Flow` Suffixen?
 6. **Version**: Stimmt die Version im Type-String mit der tatsächlichen Anzahl Breaking Changes überein?
 
 ## Schritt 5: Report ausgeben
@@ -92,13 +92,13 @@ Für jeden referenzierten Stub:
 Type: flow.name.v1
 Init: {InitMessageClass}
 Return: {ReturnMessageClass}
-Stubs: N
+Steps: N
 
 ### Validierung
 [PASS/FAIL] Type-String-Format
 [PASS/FAIL] Init-Message konsumiert
 [PASS/FAIL] Keine Duplikate
-[PASS/FAIL] Alle Stubs erreichbar
+[PASS/FAIL] Alle Steps erreichbar
 [PASS/FAIL] Kein Zyklus
 [PASS/FAIL] MessageDataInterface abgedeckt
 [PASS/FAIL] Return-Message valide
@@ -110,7 +110,7 @@ Stubs: N
 - (Liste jede Empfehlung)
 
 ### Message-Flow
-InitMessage → StubA → DataMessage → StubB → ReturnMessage
+InitMessage → StepA → DataMessage → StepB → ReturnMessage
 (ASCII-Diagramm der Message-Kette)
 ```
 

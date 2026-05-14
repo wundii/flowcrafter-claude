@@ -1,33 +1,33 @@
 ---
-name: create-stub
+name: create-step
 description: >
-  Generate a Flowcrafter Stub class. Use when the user asks to
-  "create a stub", "add a stub", "new stub", "implement a processing step",
-  or wants to implement a StubInterface class for a Flowcrafter workflow.
-argument-hint: <stub-name> [consumed-message] [--returns <message-class>]
+  Generate a Flowcrafter Step class. Use when the user asks to
+  "create a step", "add a step", "new step", "implement a processing step",
+  or wants to implement a StepInterface class for a Flowcrafter workflow.
+argument-hint: <step-name> [consumed-message] [--returns <message-class>]
 allowed-tools: Read, Glob, Grep, Write
 ---
 
-# Create Flowcrafter Stub
+# Create Flowcrafter Step
 
-Generiere eine `StubInterface`-Implementierung mit korrekter Constructor-basierter Message-Injection und `returnTypes()`-Deklaration.
+Generiere eine `StepInterface`-Implementierung mit korrekter Constructor-basierter Message-Injection und `returnTypes()`-Deklaration.
 
 ## Argumente
 
 Der User hat aufgerufen mit: $ARGUMENTS
 
-Parse das erste Token als Stub-Name (PascalCase, `Stub`-Suffix wird hinzugefügt). Falls unklar, folgende Fragen stellen:
+Parse das erste Token als Step-Name (PascalCase, `Step`-Suffix wird hinzugefügt). Falls unklar, folgende Fragen stellen:
 
-- "Welche Messages konsumiert dieser Stub?" (Constructor-Parameter vom Message-Typ)
+- "Welche Messages konsumiert dieser Step?" (Constructor-Parameter vom Message-Typ)
 - "Welche Service-Abhängigkeiten braucht er?" (nicht-Message Constructor-Parameter)
 - "Welche Message gibt er zurück?" (Output-Message-Klasse)
-- "Ist dieser der terminale Stub?" (gibt er `MessageReturnInterface` zurück?)
+- "Ist dieser der terminale Step?" (gibt er `MessageReturnInterface` zurück?)
 
 ## Schritt 1: Projekt-Kontext erkennen
 
-1. Glob auf `src/**/*Stub.php` — bestehende Stubs für Namespace und Directory
-2. Einen bestehenden Stub lesen und bestätigen:
-   - Namespace-Prefix (z.B. `App\Flowcrafter\Stubs`)
+1. Glob auf `src/**/*Step.php` — bestehende Steps für Namespace und Directory
+2. Einen bestehenden Step lesen und bestätigen:
+   - Namespace-Prefix (z.B. `App\Flowcrafter\Steps`)
    - Verwendet `process()` konkreten Return-Type oder `MessageDataInterface`?
    - Klassen-Stil: `final`, `readonly`, oder reguläre Klasse?
 3. `composer.json` auf Symfony prüfen
@@ -43,12 +43,12 @@ Flowcrafter verwendet Reflection zur Auto-Discovery:
 
 ### Sonderfall: EmptyInitMessage
 
-Wenn der Stub als erster Stub eines Flows ohne externen Input agiert, muss `EmptyInitMessage` als `public readonly` deklariert werden — **nicht `private`** — damit Rector den scheinbar unbenutzten Parameter nicht entfernt:
+Wenn der Step als erster Step eines Flows ohne externen Input agiert, muss `EmptyInitMessage` als `public readonly` deklariert werden — **nicht `private`** — damit Rector den scheinbar unbenutzten Parameter nicht entfernt:
 
 ```php
 use Wundii\Flowcrafter\EmptyInitMessage;
 
-class MyFirstStub implements StubInterface
+class MyFirstStep implements StepInterface
 {
     public function __construct(
         public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
@@ -63,22 +63,22 @@ class MyFirstStub implements StubInterface
 - `process()` Return-Type muss mit diesem Array übereinstimmen
 - Bei mehreren möglichen Types: Union-Type in `process()` (z.B. `MessageA|MessageDataInterface`)
 
-## Schritt 4: Stub-Klasse generieren
+## Schritt 4: Step-Klasse generieren
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-namespace App\Flowcrafter\Stubs;
+namespace App\Flowcrafter\Steps;
 
 use App\Flowcrafter\Messages\{ConsumedMessage};
 use App\Flowcrafter\Messages\{ReturnMessage};
 use Wundii\Flowcrafter\Interface\MessageDataInterface;
-use Wundii\Flowcrafter\Interface\StubInterface;
+use Wundii\Flowcrafter\Interface\StepInterface;
 // use App\Service\{SomeService};
 
-class {ClassName}Stub implements StubInterface
+class {ClassName}Step implements StepInterface
 {
     public function __construct(
         private readonly {ConsumedMessage} ${consumedMessageVar},
@@ -99,7 +99,7 @@ class {ClassName}Stub implements StubInterface
 }
 ```
 
-**Bei terminalem Stub** (gibt Return-Message des Flows zurück):
+**Bei terminalem Step** (gibt Return-Message des Flows zurück):
 ```php
 use Wundii\Flowcrafter\Interface\MessageReturnInterface;
 
@@ -130,8 +130,8 @@ public function process(): MessageDataInterface
 1. Generierten Code mit Erklärung anzeigen
 2. Referenzierte Messages prüfen (existieren sie bereits?)
 3. Datei schreiben mit dem Write-Tool
-4. Empfehlen zu welchem Flow dieser Stub hinzugefügt werden sollte
+4. Empfehlen zu welchem Flow dieser Step hinzugefügt werden sollte
 
 ## Patterns und Beispiele
 
-Siehe `references/stub-patterns.md` für Multi-Return-Types, Fan-in, Service-Integration.
+Siehe `references/step-patterns.md` für Multi-Return-Types, Fan-in, Service-Integration.

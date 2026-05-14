@@ -1,6 +1,6 @@
 # flowcrafter-claude
 
-Claude Code Plugin für die [Flowcrafter](https://github.com/wundii/flowcrafter) PHP Workflow-Engine. Hilft dabei, schneller und besser Flows, Stubs, Messages und Schedules zu erstellen.
+Claude Code Plugin für die [Flowcrafter](https://github.com/wundii/flowcrafter) PHP Workflow-Engine. Hilft dabei, schneller und besser Flows, Steps, Messages und Schedules zu erstellen.
 
 ## Installation
 
@@ -33,14 +33,14 @@ Im Tab **Discover** das Plugin suchen und per Enter installieren.
 
 ### Automatisch (model-invoked)
 
-Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe im Gespräch fallen (`FlowBuilder`, `StubInterface`, `*Flow.php` etc.). Claude erhält dann Framework-Wissen, korrekte Namespaces und Code-Defaults — ohne dass ein Befehl eingegeben werden muss.
+Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe im Gespräch fallen (`FlowBuilder`, `StepInterface`, `*Flow.php` etc.). Claude erhält dann Framework-Wissen, korrekte Namespaces und Code-Defaults — ohne dass ein Befehl eingegeben werden muss.
 
 ### Slash-Commands (user-invoked)
 
 | Command | Beschreibung | Beispiel |
 |---|---|---|
 | `/create-flow` | Flow-Klasse mit FlowBuilder-DSL generieren | `/create-flow WeatherComfort CityRequestMessage WeatherReportMessage` |
-| `/create-stub` | Stub-Klasse mit Message-Injection generieren | `/create-stub FetchWeather` |
+| `/create-step` | Step-Klasse mit Message-Injection generieren | `/create-step FetchWeather` |
 | `/create-message` | Message-Klasse (init/data/return) generieren | `/create-message CityRequest init city:string` |
 | `/create-schedule` | Schedule-Klasse mit Cron-Ausdruck generieren | `/create-schedule WeatherComfort WeatherComfortFlow "0 * * * *"` |
 | `/analyze-flow` | Flow auf Fehler und Verbesserungen prüfen | `/analyze-flow WeatherComfortFlow` |
@@ -55,11 +55,11 @@ Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe 
 /create-message OrderProcessed return orderId:string status:string
 ```
 
-**2. Stubs erstellen:**
+**2. Steps erstellen:**
 ```
-/create-stub ValidateOrder
-/create-stub ProcessPayment
-/create-stub SendConfirmation
+/create-step ValidateOrder
+/create-step ProcessPayment
+/create-step SendConfirmation
 ```
 
 **3. Flow zusammensetzen:**

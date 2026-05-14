@@ -40,8 +40,8 @@ Vor dem Schreiben des Codes sicherstellen:
 - **Type-String-Format**: muss `/^flow\..+\.v\d+$/` matchen
 - **Init-Message**: als zweites Argument an `FlowBuilder`. Klasse existiert oder User informieren
 - **Return-Message**: als drittes Argument. Klasse existiert oder User informieren (optional)
-- **Stubs**: mindestens ein Stub muss die Init-Message konsumieren (als Constructor-Parameter)
-- User warnen wenn referenzierte Stubs oder Messages noch nicht existieren
+- **Steps**: mindestens ein Step muss die Init-Message konsumieren (als Constructor-Parameter)
+- User warnen wenn referenzierte Steps oder Messages noch nicht existieren
 
 ## Schritt 4: Flow-Klasse generieren
 
@@ -54,7 +54,7 @@ namespace App\Flowcrafter\Flows;
 
 use App\Flowcrafter\Messages\{InitMessageClass};
 use App\Flowcrafter\Messages\{ReturnMessageClass};
-use App\Flowcrafter\Stubs\{StubClass};
+use App\Flowcrafter\Steps\{StepClass};
 use Wundii\Flowcrafter\FlowBuilder;
 use Wundii\Flowcrafter\FlowSchema;
 use Wundii\Flowcrafter\Interface\FlowInterface;
@@ -69,8 +69,8 @@ class {ClassName}Flow implements FlowInterface
             {ReturnMessageClass}::class,
         );
 
-        $flowBuilder->addStub({StubClass}::class);
-        // Weitere Stubs in Abhängigkeitsreihenfolge
+        $flowBuilder->addStep({StepClass}::class);
+        // Weitere Steps in Abhängigkeitsreihenfolge
 
         return $flowBuilder->build();
     }
@@ -79,8 +79,8 @@ class {ClassName}Flow implements FlowInterface
 
 **Hinweise**:
 - Variable heißt `$flowBuilder` (wie in den realen Beispielen)
-- `addStub()` nimmt den FQCN als `::class` Konstante
-- Reihenfolge der `addStub()`-Aufrufe ist für Dokumentation wichtig; Engine nutzt den Message-Graph
+- `addStep()` nimmt den FQCN als `::class` Konstante
+- Reihenfolge der `addStep()`-Aufrufe ist für Dokumentation wichtig; Engine nutzt den Message-Graph
 - Optional: `#[Wundii\Flowcrafter\Attribute\FlowGroup('group-name')]` auf die Klasse setzen um den Flow im Dashboard zu gruppieren — nur wenn der User es wünscht oder das Projekt es bereits verwendet
 
 ## EmptyInitMessage — Flow ohne externen Input
@@ -97,10 +97,10 @@ $flowBuilder = new FlowBuilder(
 );
 ```
 
-Im ersten Stub muss `EmptyInitMessage` als `public readonly` deklariert werden — **nicht `private`** — damit Rector den scheinbar unbenutzten Parameter nicht entfernt:
+Im ersten Step muss `EmptyInitMessage` als `public readonly` deklariert werden — **nicht `private`** — damit Rector den scheinbar unbenutzten Parameter nicht entfernt:
 
 ```php
-class MyFirstStub implements StubInterface
+class MyFirstStep implements StepInterface
 {
     public function __construct(
         public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
@@ -111,7 +111,7 @@ class MyFirstStub implements StubInterface
 ## Schritt 5: Output
 
 1. Generierten Code mit Erklärung anzeigen
-2. Fehlende Stubs und Messages auflisten, `/create-stub` und `/create-message` empfehlen
+2. Fehlende Steps und Messages auflisten, `/create-step` und `/create-message` empfehlen
 3. Datei schreiben mit dem Write-Tool
 
 ## Detaillierte Validierungsregeln
