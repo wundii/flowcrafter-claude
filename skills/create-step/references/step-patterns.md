@@ -38,6 +38,29 @@ class FetchWeatherStep implements StepInterface
 
 In pure PHP: `$apiClient` muss im `dependenciesInjection`-Array des `FlowRunner` enthalten sein.
 
+## Step mit Retry (fehleranfällige externe Operationen)
+
+Steps die HTTP-Calls, DB-Zugriffe oder andere fehleranfällige I/O durchführen, sollten im Flow mit `retries` und `delay` registriert werden:
+
+```php
+// Im Flow:
+$flowBuilder->addStep(FetchWeatherStep::class, retries: 3, delay: 500);
+```
+
+Der Step selbst bleibt unverändert — die Retry-Logik ist im `FlowRunner` implementiert:
+- Bei Exception wird `process()` erneut aufgerufen (neue Step-Instanz)
+- Jeder Fehlversuch wird als `FlowRetry`-Eintrag im Flow persistiert
+- Nach Erschöpfung aller Retries wird die Exception als `FlowException` geworfen
+
+**Wann `retries` setzen:**
+- HTTP/API-Calls (Netzwerk-Timeouts, Rate-Limits)
+- Datenbank-Operationen (Deadlocks, Connection-Drops)
+- Externe Service-Aufrufe (temporäre Nichtverfügbarkeit)
+
+**Wann NICHT:**
+- Reine Transformations-Steps (deterministische Logik)
+- Validierungs-Steps (Fehler ist gewollt, kein Retry sinnvoll)
+
 ## Mehrere Return-Types (Conditional Branching)
 
 Beide Types müssen downstream von einem Step konsumiert werden (oder `MessageReturnInterface` sein):

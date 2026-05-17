@@ -36,6 +36,13 @@ Erweiterte Checkliste für die Produktionsreife-Prüfung von Flowcrafter Flows.
 - [ ] Message-Property-Namen sind domänen-semantisch (nicht technisch)
 - [ ] Flow-Version (`v1`, `v2`) reflektiert tatsächliche Breaking Changes
 
+## Retry-Konfiguration
+
+- [ ] Steps mit externem I/O (HTTP, DB, APIs) haben `retries` konfiguriert
+- [ ] `delay` ist sinnvoll gewählt (z.B. 500ms+ für Rate-Limits, 200ms für Netzwerk-Glitches)
+- [ ] Reine Transformations-Steps haben KEINE `retries` (deterministische Logik braucht keinen Retry)
+- [ ] `retries`-Werte sind nicht übertrieben hoch (>5 ist selten sinnvoll)
+
 ## Observability und Testbarkeit
 
 - [ ] Steps mit externem I/O (HTTP, DB) nutzen Interface-typisierte Service-Parameter

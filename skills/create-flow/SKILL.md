@@ -70,7 +70,8 @@ class {ClassName}Flow implements FlowInterface
         );
 
         $flowBuilder->addStep({StepClass}::class);
-        // Weitere Steps in Abhängigkeitsreihenfolge
+        // Steps mit Retry für fehleranfällige Operationen (HTTP, DB, externe APIs):
+        // $flowBuilder->addStep({StepClass}::class, retries: 3, delay: 500);
 
         return $flowBuilder->build();
     }
@@ -81,6 +82,8 @@ class {ClassName}Flow implements FlowInterface
 - Variable heißt `$flowBuilder` (wie in den realen Beispielen)
 - `addStep()` nimmt den FQCN als `::class` Konstante
 - Reihenfolge der `addStep()`-Aufrufe ist für Dokumentation wichtig; Engine nutzt den Message-Graph
+- `addStep()` akzeptiert optionale Parameter `retries: int` (default 0) und `delay: int` (default 200ms) für automatische Wiederholung bei Exceptions — nur für Steps mit externem I/O (HTTP, DB) empfohlen
+- `retries` und `delay` fließen in den Schema-Hash ein — Änderungen erfordern neue Flow-Version
 - Optional: `#[Wundii\Flowcrafter\Attribute\FlowGroup('group-name')]` auf die Klasse setzen um den Flow im Dashboard zu gruppieren — nur wenn der User es wünscht oder das Projekt es bereits verwendet
 
 ## EmptyInitMessage — Flow ohne externen Input

@@ -63,6 +63,12 @@ Alle Validierungen werden bei `FlowBuilder::build()` ausgeführt. Fehler werfen 
 
 **Fix**: Entweder einen downstream Step hinzufügen der `Y` konsumiert, oder die Message auf `MessageReturnInterface` ändern falls es der terminale Output ist.
 
+## 8. Schema-Hash und Retry-Parameter
+
+`retries` und `delay` sind Teil des Schema-Hashs (`FlowSchema::getHash()`). Eine Änderung dieser Werte — auch ohne sonstige strukturelle Änderungen — ergibt einen neuen Hash. Bestehende Flow-Instanzen mit dem alten Hash werden beim Re-Run als inkompatibel erkannt.
+
+**Fix**: Flow-Version erhöhen (z.B. `v1` → `v2`) wenn `retries` oder `delay` geändert werden.
+
 ## Fehlertabelle
 
 | Fehler | Ursache | Fix |
@@ -74,3 +80,4 @@ Alle Validierungen werden bei `FlowBuilder::build()` ausgeführt. Fehler werfen 
 | Zyklus erkannt | Ringabhängigkeit zwischen Steps | Message-Kette umstrukturieren |
 | Step nicht erreichbar | Step hat keine Verbindung zum Init-Step | Message-Routing korrigieren oder Step entfernen |
 | Hängende MessageDataInterface | Produzierte Message wird nicht konsumiert | Downstream Step hinzufügen oder MessageReturnInterface nutzen |
+| Schema-Hash-Mismatch | `retries`/`delay` geändert ohne Versions-Bump | Flow-Version erhöhen (`v1` → `v2`) |

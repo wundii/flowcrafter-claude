@@ -45,9 +45,32 @@ $result = $runner->run(message: new CityRequestMessage('Tokyo'));
 - `$this->enqueue()` → asynchron via Queue (empfohlen)
 - `$this->run()` → synchron, blockierend
 
+## Retry-Mechanismus
+
+Steps die externen I/O durchführen (HTTP-Calls, DB-Zugriffe) können automatisch bei Fehlern wiederholt werden:
+
+```php
+$flowBuilder->addStep(FetchWeatherStep::class, retries: 3, delay: 500);
+```
+
+- `retries: 3` → bis zu 3 **zusätzliche** Versuche (insgesamt 4 Ausführungen)
+- `delay: 500` → 500ms Pause zwischen den Versuchen
+- Default: `retries: 0, delay: 200`
+
+**Verhalten bei Retry:**
+1. `process()` wirft eine Exception
+2. Flowcrafter erzeugt einen `FlowRetry`-Eintrag (attempt, message, stepSource, time)
+3. Wartet `delay` ms
+4. Erstellt eine **neue** Step-Instanz und ruft `process()` erneut auf
+5. Nach dem letzten Fehlversuch (`retries` erschöpft) wird die Exception geworfen und als `FlowException` persistiert
+
+**FlowRetry-Einträge** dokumentieren jeden fehlgeschlagenen Zwischenversuch im Flow. Sie sind über `$flow->getFlowRetries()` abrufbar und werden in allen Storage-Backends persistiert.
+
+**Schema-Hash**: `retries` und `delay` sind Teil des Schema-Hashs. Eine Änderung dieser Werte erzwingt eine neue Flow-Version.
+
 ## FlowSchema und Hashing
 
-Jeder Flow hat einen Content-Hash (MD5 des Schemas). Beim Ausführen prüft Flowcrafter ob der Schema-Hash der gespeicherten Instanz mit dem aktuellen Code übereinstimmt. Änderungen am Flow (neue Steps, andere Messages) erzwingen eine neue Version (`v2`, `v3`...).
+Jeder Flow hat einen Content-Hash (MD5 des Schemas). Beim Ausführen prüft Flowcrafter ob der Schema-Hash der gespeicherten Instanz mit dem aktuellen Code übereinstimmt. Änderungen am Flow (neue Steps, andere Messages, retries, delay) erzwingen eine neue Version (`v2`, `v3`...).
 
 ## Symfony-Integration
 

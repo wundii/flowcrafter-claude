@@ -97,7 +97,7 @@ class WeatherComfortFlow implements FlowInterface
             WeatherReportMessage::class,
         );
 
-        $flowBuilder->addStep(FetchWeatherStep::class);
+        $flowBuilder->addStep(FetchWeatherStep::class, retries: 3, delay: 500);
         $flowBuilder->addStep(ConvertWeatherStep::class);
         $flowBuilder->addStep(SummaryReportStep::class);
 
@@ -139,9 +139,19 @@ $flowBuilder = new FlowBuilder(
     ReturnMessage::class,    // MessageReturnInterface FQCN (optional)
 );
 $flowBuilder->addStep(StepA::class);
-$flowBuilder->addStep(StepB::class);
+$flowBuilder->addStep(StepB::class, retries: 3, delay: 500);
 return $flowBuilder->build();
 ```
+
+### `addStep()` Parameter
+
+| Parameter | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `stepSource` | `class-string` | — | Step-Klasse (Pflicht) |
+| `retries` | `int` | `0` | Zusätzliche Versuche bei Fehler (0 = kein Retry) |
+| `delay` | `int` | `200` | Wartezeit in ms zwischen Retries |
+
+`retries` und `delay` fließen in den Schema-Hash ein — eine Änderung erzwingt eine neue Flow-Version.
 
 ## FlowBuilder Validierungsregeln (bei `build()`)
 
