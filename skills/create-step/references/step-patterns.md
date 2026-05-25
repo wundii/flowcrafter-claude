@@ -153,9 +153,9 @@ class ManualServiceStep implements StepInterface
 
 // FlowRunner instantiieren:
 $runner = new FlowRunner(
-    type: $schema->type(),
+    type: 'flow.my-flow.v1',
     flowSource: MyFlow::class,
     storage: $storage,
-    dependenciesInjection: [new MyService()], // Service-Instanzen hier
+    dependenciesInjection: [new MyService()],
 );
 ```

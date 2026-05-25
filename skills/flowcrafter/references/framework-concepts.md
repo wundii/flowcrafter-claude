@@ -72,27 +72,32 @@ $flowBuilder->addStep(FetchWeatherStep::class, retries: 3, delay: 500);
 
 Jeder Flow hat einen Content-Hash (MD5 des Schemas). Beim Ausführen prüft Flowcrafter ob der Schema-Hash der gespeicherten Instanz mit dem aktuellen Code übereinstimmt. Änderungen am Flow (neue Steps, andere Messages, retries, delay) erzwingen eine neue Version (`v2`, `v3`...).
 
-## Symfony-Integration
+## DI-Integration
 
-Flowcrafter nutzt intern Symfony-Komponenten (`symfony/dependency-injection`, `symfony/config`). In einem Symfony-Projekt:
+Flowcrafter nutzt intern Symfony `ContainerBuilder` (`symfony/dependency-injection`) für Autowiring. Es gibt **kein Symfony-Bundle** — Flowcrafter ist eine eigenständige Library.
 
-- Steps werden als Services registriert (via `autoconfigure: true` in `services.yaml`)
-- Flowcrafter Symfony Bundle (falls vorhanden) registriert Flows und Schedules automatisch
-- Service-Dependencies in Step-Constructors werden per Symfony-Autowiring aufgelöst
-- Schedule-Runner integriert sich mit Symfony Messenger oder Scheduler
+Service-Dependencies für Steps und Schedules werden über das `dependenciesInjection`-Array konfiguriert — drei Modi:
 
-Prüfe `config/bundles.php` auf Flowcrafter-Bundle-Einträge.
+| Schlüssel | Wert | Verhalten |
+|---|---|---|
+| ohne Schlüssel | `class-string` | Klasse wird per Autowiring registriert |
+| ohne Schlüssel | `object` | Konkrete Instanz, gebunden an eigene Klasse |
+| Interface-Klassenname | `object` | Instanz wird an Interface und konkrete Klasse gebunden (Alias) |
 
-## Pure PHP (ohne Symfony)
+```php
+$flowRunner = new FlowRunner(
+    type: 'flow.order.v1',
+    flowSource: OrderFlow::class,
+    storage: $storage,
+    dependenciesInjection: [
+        HttpClientInterface::class => new CurlHttpClient(),
+        new MyLogger(),
+        SomeService::class,
+    ],
+);
+```
 
-Ohne Symfony muss die Anwendung:
-
-1. Einen PSR-11 Container oder manuelle Service-Wiring bereitstellen
-2. `dependenciesInjection: [...]` Array beim `FlowRunner` befüllen
-3. `FlowScheduler::tick()` oder `FlowScheduler::run()` über einen Cron-Job aufrufen
-4. Storage-Backend (MySQL/Redis/ESDB) konfigurieren
-
-Prüfe `bootstrap.php`, `container.php` oder ähnliche Entry-Points.
+Dasselbe Array gilt für `FlowcrafterConfig::setDependenciesInjection()` (Service/Observer), `FlowScheduler` und `FlowAssertTrait` (Tests).
 
 ## Flow-Versionierung
 
@@ -111,10 +116,10 @@ class WeatherFlowTest extends FlowTestCase
 {
     public function testFlow(): void
     {
-        $result = $this->runFlow(
-            WeatherComfortFlow::class,
-            WeatherComfortFlow::class,
-            new CityRequestMessage('Tokyo'),
+        $this->runFlow(
+            flowType: 'flow.weather-comfort.v2',
+            flowSource: WeatherComfortFlow::class,
+            initMessage: new CityRequestMessage('Tokyo'),
         );
 
         $this->assertFlowOk();
@@ -124,4 +129,33 @@ class WeatherFlowTest extends FlowTestCase
 }
 ```
 
-Verfügbare Assertions: `assertFlowOk()`, `assertStepExecuted()`, `assertFlowHasMessage()`, `assertFlowReturned()`, `assertFlowBoolResult()`.
+Verfügbare Assertions:
+
+| Assertion | Beschreibung |
+|---|---|
+| `assertFlowOk()` | Status ist `OK` |
+| `assertFlowFailed()` | Status ist `FAILED` |
+| `assertFlowStatus(StatusEnum)` | Beliebiger Status |
+| `assertFlowReturned(class)` | Return-Message prüfen (gibt gecastete Instanz zurück) |
+| `assertStepExecuted(class)` | Step wurde ausgeführt |
+| `assertStepNotExecuted(class)` | Step wurde nicht ausgeführt |
+| `assertFlowHasMessage(class)` | Message-Typ im Flow vorhanden |
+| `assertFlowMessageCount(int)` | Anzahl Flow-Messages |
+| `assertFlowBoolResult(bool)` | Alle FlowResults haben erwarteten Wert |
+| `assertFlowBoolResultFrom(class, bool)` | FlowResult eines bestimmten Steps |
+| `assertFlowResultCount(int)` | Anzahl FlowResults |
+| `assertNoFlowExceptions()` | Keine Exceptions im Flow |
+| `assertFlowExceptionFrom(class, ?msg)` | Exception von bestimmtem Step (optional mit Message-Substring) |
+| `assertFlowRunCount(int)` | Anzahl Runs |
+
+DI im Test via `dependencies`-Parameter:
+```php
+$this->runFlow(
+    flowType: 'flow.weather-comfort.v2',
+    flowSource: WeatherComfortFlow::class,
+    initMessage: new CityRequestMessage('Tokyo'),
+    dependencies: [
+        HttpClientInterface::class => new FakeHttpClient(),
+    ],
+);
+```
