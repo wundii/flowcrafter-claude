@@ -4,7 +4,7 @@ description: >
   This skill should be used when the user discusses Flowcrafter, mentions
   "FlowBuilder", "StepInterface", "FlowInterface", "MessageInitInterface",
   "MessageDataInterface", "MessageReturnInterface", "AbstractMessage",
-  "AbstractSchedule", "FlowSchedule", "FlowRunner", "FlowObserver",
+  "AbstractSchedule", "FlowSchedule", "FlowEphemeral", "FlowRunner", "FlowObserver",
   asks to "create a flow", "add a step", "wire up messages",
   "build a workflow", "build a processing pipeline", "define a schedule",
   or when PHP files named *Flow.php, *Step.php, *Message.php,
@@ -182,6 +182,34 @@ return $flowBuilder->build();
 5. **Alle Steps erreichbar**: jeder Step muss vom Init-Step aus über Message-Ketten erreichbar sein
 6. **MessageDataInterface abgedeckt**: jeder `MessageDataInterface`-Return-Type muss downstream konsumiert werden
 
+## FlowEphemeral — Flows ohne Primary-Storage-Persistierung
+
+Das `#[FlowEphemeral]`-Attribut (`Wundii\Flowcrafter\Attribute\FlowEphemeral`) markiert einen Flow als kurzlebig. Ephemeral Flows überspringen alle Schreibvorgänge in die Primary Storage (MySQL, Redis, Esdb) und persistieren nur im SQLite Service-Index — inklusive einer JSON-Kopie für die Detail-Ansicht.
+
+```php
+use Wundii\Flowcrafter\Attribute\FlowEphemeral;
+
+#[FlowEphemeral(expiryDays: 7)]
+class HealthCheckFlow implements FlowInterface
+{
+    // ...
+}
+```
+
+| Parameter | Typ | Default | Beschreibung |
+|---|---|---|---|
+| `expiryDays` | `int` | `14` | Tage bis zur automatischen Löschung (min. 1) |
+
+**Verhalten:**
+- Kein Aufruf von `registerFlowSchema`, `registerFlowInstance`, `appendFlowRun`, `registerMessageSource`, `registerStepSource`, `appendFlowMessage`, `appendFlowResult` auf der Primary Storage
+- Stattdessen wird der komplette Flow als JSON in die SQLite-Tabelle `flow_ephemeral_list` geschrieben
+- `FlowScheduler::tick()` ruft `cleanupEphemeral()` auf und entfernt abgelaufene Einträge aus `flow_ephemeral_list`, `flow_list`, `flow_run_list` und `flow_exception_list`
+- In der REST-API-Antwort (`/api/flow/flow-details`) wird `isReadOnly: true`, `isExecutable: false` und ein `readOnlyReasons`-Eintrag gesetzt
+
+**Anwendungsfälle:** Health-Checks, Monitoring-Pings, temporäre Debug-Flows — alles was Metriken produziert aber nicht dauerhaft gespeichert werden muss.
+
+Nur hinzufügen wenn der User explizit ephemeral wünscht oder das Projekt bereits `#[FlowEphemeral]` verwendet.
+
 ## FlowGroup — Flows im Dashboard gruppieren
 
 Das optionale `#[FlowGroup]`-Attribut (`Wundii\Flowcrafter\Attribute\FlowGroup`) gruppiert Flows im Flowcrafter-Dashboard:
@@ -231,6 +259,7 @@ use Wundii\Flowcrafter\Interface\MessageInitInterface;
 use Wundii\Flowcrafter\Interface\MessageDataInterface;
 use Wundii\Flowcrafter\Interface\MessageReturnInterface;
 use Wundii\Flowcrafter\EmptyInitMessage;
+use Wundii\Flowcrafter\Attribute\FlowEphemeral;
 use Wundii\Flowcrafter\Attribute\FlowGroup;
 use Wundii\Flowcrafter\Attribute\FlowSchedule;
 use Wundii\Flowcrafter\Schedule\AbstractSchedule;

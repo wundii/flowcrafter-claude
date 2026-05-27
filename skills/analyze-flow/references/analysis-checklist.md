@@ -50,6 +50,13 @@ Erweiterte Checkliste für die Produktionsreife-Prüfung von Flowcrafter Flows.
 - [ ] Type-String ist projektübergreifend eindeutig (Grep bestätigt keine Duplikate)
 - [ ] FlowTestCase-Tests existieren für den Flow
 
+## Ephemeral-Konfiguration
+
+- [ ] Falls `#[FlowEphemeral]` gesetzt: `expiryDays` ist sinnvoll gewählt (nicht zu kurz für Debugging, nicht zu lang für Disk-Verbrauch)
+- [ ] Falls `#[FlowEphemeral]` gesetzt: Flow wird nicht von anderen Flows als Abhängigkeit referenziert (ephemeral Flows haben keine Primary-Storage-Daten für Lookups)
+- [ ] Falls `#[FlowEphemeral]` gesetzt: Flow produziert keine kritischen Business-Daten die dauerhaft persistiert werden müssen
+- [ ] Nicht-ephemeral: kein `#[FlowEphemeral]` auf Flows die Business-Logik-Ergebnisse liefern
+
 ## Häufige Anti-Patterns
 
 | Anti-Pattern | Problem | Lösung |
@@ -60,3 +67,5 @@ Erweiterte Checkliste für die Produktionsreife-Prüfung von Flowcrafter Flows.
 | Fehlende `readonly` | Mutabler Zustand möglich | `private readonly` oder `readonly class` |
 | Zu generische Messages | `DataMessage` mit 20 Properties | Domänen-spezifische Messages pro Kontext |
 | Hard-coded Credentials in Steps | API-Keys direkt im Code | Config/Service-Injection nutzen |
+| Ephemeral auf Business-Flow | Wichtige Daten nicht dauerhaft persistiert | `#[FlowEphemeral]` entfernen |
+| Nicht-ephemeral auf Monitoring | Monitoring-Pings füllen Primary Storage | `#[FlowEphemeral]` setzen |

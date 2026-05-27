@@ -68,6 +68,29 @@ $flowBuilder->addStep(FetchWeatherStep::class, retries: 3, delay: 500);
 
 **Schema-Hash**: `retries` und `delay` sind Teil des Schema-Hashs. Eine Änderung dieser Werte erzwingt eine neue Flow-Version.
 
+## Ephemeral Flows
+
+Flows mit `#[FlowEphemeral]` überspringen alle Primary-Storage-Schreibvorgänge (Schema, Instanz, Run, Messages, Results, Sources). Der `FlowRunner` erkennt das Attribut per Reflection und setzt interne Flags (`ephemeral = true`, `ephemeralExpiryDays`).
+
+**Storage-Verhalten:**
+- `appendFlow()` wird mit `ephemeral: true` und `ephemeralExpiryDays: N` aufgerufen
+- Nur der SQLite Service-Index wird beschrieben: `flow_list`, `flow_run_list`, `flow_exception_list` (wie normal) + `flow_ephemeral_list` (JSON-Kopie des kompletten Flows)
+- Die `flow_ephemeral_list`-Tabelle speichert `flow_hash`, `flow_runtime_hash`, `flow_json`, `expires_at` und `time`
+
+**Cleanup:**
+- `FlowScheduler::tick()` ruft `cleanupEphemeral()` auf
+- Abgelaufene Einträge (wo `expires_at <= now`) werden aus `flow_ephemeral_list`, `flow_list`, `flow_run_list` und `flow_exception_list` gelöscht
+- Nicht-abgelaufene Einträge bleiben erhalten
+
+**API-Verhalten:**
+- `GET /api/flow/flow-details` prüft zuerst `flow_ephemeral_list`, dann Primary Storage
+- Ephemeral-Antworten erhalten `isReadOnly: true`, `isExecutable: false` und `readOnlyReasons`-Array mit Ephemeral-Hinweis
+- Der Sync-Drift-Check (`StoragePreflight`) subtrahiert ephemeral Flows vom Service-Count
+
+**Testing:**
+- `FlowRunner` ohne Storage läuft ephemeral Flows problemlos (alle Storage-Calls sind optional)
+- Mit `StorageInterface`-Mock: `appendFlow` wird einmal mit `ephemeral: true` aufgerufen, alle anderen write-Methoden `never()`
+
 ## FlowSchema und Hashing
 
 Jeder Flow hat einen Content-Hash (MD5 des Schemas). Beim Ausführen prüft Flowcrafter ob der Schema-Hash der gespeicherten Instanz mit dem aktuellen Code übereinstimmt. Änderungen am Flow (neue Steps, andere Messages, retries, delay) erzwingen eine neue Version (`v2`, `v3`...).

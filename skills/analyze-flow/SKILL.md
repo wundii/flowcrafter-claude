@@ -76,6 +76,12 @@ Für jeden referenzierten Step:
 - Falls Return-Message deklariert: muss in `returnTypes()` eines Steps erscheinen
 - Die Klasse muss `MessageReturnInterface` implementieren
 
+### [8] FlowEphemeral-Konfiguration
+- Prüfe: Hat die Flow-Klasse `#[FlowEphemeral]`?
+- Falls ja: ist `expiryDays` sinnvoll (>= 1)?
+- Falls ja: produziert der Flow kritische Business-Daten die dauerhaft benötigt werden?
+- Flag: `#[FlowEphemeral]` auf Business-kritischem Flow
+
 ## Schritt 4: Verbesserungsvorschläge
 
 1. **Fehlende `readonly`**: Sind Step-Klassen und Messages ohne `readonly`? (PHP 8.2+)
@@ -102,6 +108,7 @@ Steps: N
 [PASS/FAIL] Kein Zyklus
 [PASS/FAIL] MessageDataInterface abgedeckt
 [PASS/FAIL] Return-Message valide
+[PASS/FAIL] FlowEphemeral-Konfiguration (falls gesetzt)
 
 ### Gefundene Probleme
 - (Liste jede Verletzung mit Erklärung und konkretem Fix-Vorschlag)

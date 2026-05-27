@@ -85,6 +85,7 @@ class {ClassName}Flow implements FlowInterface
 - `addStep()` akzeptiert optionale Parameter `retries: int` (default 0) und `delay: int` (default 200ms) für automatische Wiederholung bei Exceptions — nur für Steps mit externem I/O (HTTP, DB) empfohlen
 - `retries` und `delay` fließen in den Schema-Hash ein — Änderungen erfordern neue Flow-Version
 - Optional: `#[Wundii\Flowcrafter\Attribute\FlowGroup('group-name')]` auf die Klasse setzen um den Flow im Dashboard zu gruppieren — nur wenn der User es wünscht oder das Projekt es bereits verwendet
+- Optional: `#[Wundii\Flowcrafter\Attribute\FlowEphemeral(expiryDays: 14)]` auf die Klasse setzen für kurzlebige Flows die nicht in der Primary Storage persistiert werden (z.B. Health-Checks, Monitoring) — nur wenn der User es explizit wünscht. `expiryDays` (default 14, min 1) steuert die automatische Löschung aus dem Service-Index
 
 ## EmptyInitMessage — Flow ohne externen Input
 
