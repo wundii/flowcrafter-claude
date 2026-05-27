@@ -60,6 +60,28 @@ readonly class {ClassName}Message extends AbstractMessage implements MessageInit
 
 Passe `MessageInitInterface` an den gewählten Typ an (`MessageDataInterface` / `MessageReturnInterface`).
 
+### DTOs als Message-Properties
+
+Wenn eine Message-Property ein Objekt (DTO) ist statt eines skalaren Werts, **muss dieses DTO `JsonSerializable` implementieren**. `AbstractMessage::jsonSerialize()` serialisiert promoted Properties via Reflection — Objekte ohne `JsonSerializable` werden von `json_encode` nicht korrekt serialisiert.
+
+```php
+final readonly class DeviceState implements \JsonSerializable
+{
+    public function __construct(
+        private string $name,
+        private float $temperature,
+    ) {}
+
+    public function jsonSerialize(): array
+    {
+        return [
+            'name' => $this->name,
+            'temperature' => $this->temperature,
+        ];
+    }
+}
+```
+
 ### Nur auf Wunsch des Users: `private` + Getter
 
 ```php

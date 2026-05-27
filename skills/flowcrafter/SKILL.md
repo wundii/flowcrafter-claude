@@ -44,6 +44,26 @@ readonly class CityRequestMessage extends AbstractMessage implements MessageInit
 
 Nur auf `private` + Getter wechseln wenn der User es explizit wünscht.
 
+**DTOs in Messages müssen `JsonSerializable` implementieren.** `AbstractMessage::jsonSerialize()` serialisiert alle promoted Properties via Reflection. Skalare Werte und Arrays werden automatisch korrekt serialisiert. Objekte (DTOs) dagegen brauchen `JsonSerializable`, da `json_encode` sonst leere Objekte oder Fehler produziert.
+
+```php
+final readonly class DeviceState implements \JsonSerializable
+{
+    public function __construct(
+        private string $name,
+        private float $temperature,
+    ) {}
+
+    public function jsonSerialize(): array
+    {
+        return [
+            'name' => $this->name,
+            'temperature' => $this->temperature,
+        ];
+    }
+}
+```
+
 ### Steps
 
 Zustandslose Verarbeitungseinheiten. Jeder Step:
