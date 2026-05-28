@@ -239,5 +239,6 @@ Vor der Code-Generierung in einem unbekannten Projekt:
 ## Weiterführende Details
 
 - `references/execution-model.md` — Rekursive Ausführung, Branching, Convergence, Regeln
+- `references/testing.md` — FlowTestCase, runFlow(), runStep(), Assertions, Branching-Pattern
 - `references/data-mapper.md` — `wundii/data-mapper` für typsicheres Mapping von JSON/Array/XML → DTOs
 - `references/framework-concepts.md` — Message Routing, Lifecycle, Retry, Ephemeral, FlowGroup, EmptyInitMessage, DI, Testing, Imports
