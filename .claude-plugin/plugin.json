@@ -1,6 +1,6 @@
 {
   "name": "flowcrafter",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Code generation and analysis tools for the Flowcrafter PHP message-driven workflow engine. Generates Flows, Steps, Messages, and Schedules with framework detection for Symfony and pure PHP projects.",
   "author": {
     "name": "Andreas Wunderwald",

@@ -44,6 +44,8 @@ readonly class CityRequestMessage extends AbstractMessage implements MessageInit
 
 Nur auf `private` + Getter wechseln wenn der User es explizit wünscht.
 
+**Bei komplexen Messages** (viele Werte, verschachtelte DTOs): `wundii/data-mapper` verwenden — befüllt DataMessages inkl. typisierter DTOs direkt aus HTTP-Responses (JSON/Array/XML).
+
 **DTOs in Messages müssen `JsonSerializable` implementieren.** `AbstractMessage::jsonSerialize()` serialisiert alle promoted Properties via Reflection. Skalare Werte und Arrays werden automatisch korrekt serialisiert. Objekte (DTOs) dagegen brauchen `JsonSerializable`, da `json_encode` sonst leere Objekte oder Fehler produziert.
 
 ### Steps
@@ -123,6 +125,7 @@ Workflow-Blueprints. Ein Flow:
 - Deklariert `schema(): FlowSchema` via `FlowBuilder`-DSL
 - Hat einen Type-String im Format `flow.<name>.v<N>` (Pflicht!)
 - Verbindet Init-Message → Steps → Return-Message
+- **Ein Flow = ein fachliches Ziel.** Kann viele Steps haben, aber nicht mehrere unabhängige Fachlichkeiten mischen.
 
 ```php
 class WeatherComfortFlow implements FlowInterface
@@ -221,16 +224,7 @@ Beim Generieren von Flowcrafter-Code immer:
 
 ## Directory-Conventions
 
-**Symfony-Projekte:**
-```
-src/Flowcrafter/{Flows,Steps,Messages,Schedules}/
-```
-
-**Pure PHP:**
-```
-src/{Flow,Step,Message,Schedule}/
-```
-
+Symfony: `src/Flowcrafter/{Flows,Steps,Messages,Schedules}/` — Pure PHP: `src/{Flow,Step,Message,Schedule}/`
 Immer Glob verwenden um die tatsächliche Konvention im Projekt zu bestätigen!
 
 ## Framework-Detection
@@ -245,4 +239,5 @@ Vor der Code-Generierung in einem unbekannten Projekt:
 ## Weiterführende Details
 
 - `references/execution-model.md` — Rekursive Ausführung, Branching, Convergence, Regeln
+- `references/data-mapper.md` — `wundii/data-mapper` für typsicheres Mapping von JSON/Array/XML → DTOs
 - `references/framework-concepts.md` — Message Routing, Lifecycle, Retry, Ephemeral, FlowGroup, EmptyInitMessage, DI, Testing, Imports
