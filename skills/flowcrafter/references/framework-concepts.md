@@ -97,6 +97,61 @@ Flows mit `#[FlowEphemeral]` überspringen alle Primary-Storage-Schreibvorgänge
 - `FlowRunner` ohne Storage läuft ephemeral Flows problemlos (alle Storage-Calls sind optional)
 - Mit `StorageInterface`-Mock: `appendFlow` wird einmal mit `ephemeral: true` aufgerufen, alle anderen write-Methoden `never()`
 
+## FlowGroup — Flows im Dashboard gruppieren
+
+Das optionale `#[FlowGroup]`-Attribut (`Wundii\Flowcrafter\Attribute\FlowGroup`) gruppiert Flows im Flowcrafter-Dashboard:
+
+```php
+use Wundii\Flowcrafter\Attribute\FlowGroup;
+
+#[FlowGroup('weather')]
+class WeatherComfortFlow implements FlowInterface
+{
+    // ...
+}
+```
+
+Nur hinzufügen wenn der User explizit eine Gruppierung wünscht oder das Projekt bereits `#[FlowGroup]` verwendet.
+
+## EmptyInitMessage — Flow ohne externen Input
+
+Falls ein Flow keinen externen Input benötigt (z.B. ein Scheduler-getriggerter Flow), **keine eigene Init-Message erstellen**. Stattdessen die eingebaute Klasse verwenden:
+
+```php
+use Wundii\Flowcrafter\EmptyInitMessage;
+
+$flowBuilder = new FlowBuilder('flow.my-flow.v1', EmptyInitMessage::class);
+```
+
+Im ersten Step **muss** das `EmptyInitMessage`-Property `public readonly` sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
+
+```php
+class MyFirstStep implements StepInterface
+{
+    public function __construct(
+        public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
+    ) {}
+}
+```
+
+## Korrekte Imports
+
+```php
+use Wundii\Flowcrafter\AbstractMessage;
+use Wundii\Flowcrafter\FlowBuilder;
+use Wundii\Flowcrafter\FlowSchema;
+use Wundii\Flowcrafter\Interface\FlowInterface;
+use Wundii\Flowcrafter\Interface\StepInterface;
+use Wundii\Flowcrafter\Interface\MessageInitInterface;
+use Wundii\Flowcrafter\Interface\MessageDataInterface;
+use Wundii\Flowcrafter\Interface\MessageReturnInterface;
+use Wundii\Flowcrafter\EmptyInitMessage;
+use Wundii\Flowcrafter\Attribute\FlowEphemeral;
+use Wundii\Flowcrafter\Attribute\FlowGroup;
+use Wundii\Flowcrafter\Attribute\FlowSchedule;
+use Wundii\Flowcrafter\Schedule\AbstractSchedule;
+```
+
 ## FlowSchema und Hashing
 
 Jeder Flow hat einen Content-Hash (MD5 des Schemas). Beim Ausführen prüft Flowcrafter ob der Schema-Hash der gespeicherten Instanz mit dem aktuellen Code übereinstimmt. Änderungen am Flow (neue Steps, andere Messages, retries, delay) erzwingen eine neue Version (`v2`, `v3`...).

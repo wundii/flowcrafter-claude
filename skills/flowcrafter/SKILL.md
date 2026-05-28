@@ -46,35 +46,15 @@ Nur auf `private` + Getter wechseln wenn der User es explizit wünscht.
 
 **DTOs in Messages müssen `JsonSerializable` implementieren.** `AbstractMessage::jsonSerialize()` serialisiert alle promoted Properties via Reflection. Skalare Werte und Arrays werden automatisch korrekt serialisiert. Objekte (DTOs) dagegen brauchen `JsonSerializable`, da `json_encode` sonst leere Objekte oder Fehler produziert.
 
-```php
-final readonly class DeviceState implements \JsonSerializable
-{
-    public function __construct(
-        private string $name,
-        private float $temperature,
-    ) {}
-
-    public function jsonSerialize(): array
-    {
-        return [
-            'name' => $this->name,
-            'temperature' => $this->temperature,
-        ];
-    }
-}
-```
-
 ### Steps
 
 Zustandslose Verarbeitungseinheiten. Jeder Step:
 
 - Implementiert `Wundii\Flowcrafter\Interface\StepInterface`
-- Deklariert verbrauchte Messages als typisierte Constructor-Parameter
-- Deklariert Service-Abhängigkeiten als weitere Constructor-Parameter (`private readonly`)
+- Deklariert verbrauchte Messages als typisierte Constructor-Parameter (auto-injected)
+- Deklariert Service-Abhängigkeiten als weitere Constructor-Parameter (per DI-Container)
 - Gibt mögliche Return-Types in `returnTypes(): array` als FQCN-Array an
 - Implementiert `process()` mit der eigentlichen Logik
-
-Flowcrafter erkennt per Reflection welche Messages ein Step benötigt. Constructor-Parameter mit Message-Typen → auto-injected. Andere Typen → per DI-Container.
 
 **Step Return-Types:**
 
@@ -89,7 +69,6 @@ class FetchWeatherStep implements StepInterface
 {
     public function __construct(
         private readonly CityRequestMessage $cityRequestMessage,
-        // private readonly SomeService $service, // nicht-Message → DI
     ) {}
 
     /** @return class-string[] */
@@ -221,162 +200,38 @@ return $flowBuilder->build();
 5. **Alle Steps erreichbar**: jeder Step muss vom Init-Step aus über Message-Ketten erreichbar sein
 6. **Hauptpfad zur ReturnMessage intakt**: Es muss mindestens ein vollständiger Pfad von InitMessage zur ReturnMessage existieren — jede DataMessage auf diesem Pfad muss downstream konsumiert werden. DataMessages auf Seitenzweigen dürfen terminal enden (nicht konsumiert, bool-Return)
 
-## Execution-Modell
+## Flow-Attribute
 
-Der `FlowRunner` arbeitet **rekursiv message-driven**, nicht linear Step für Step:
+- **`#[FlowEphemeral(expiryDays: 14)]`** — Flow ohne Primary-Storage-Persistierung, nur SQLite. Für Health-Checks, Monitoring, temporäre Flows. Details: `references/framework-concepts.md`
+- **`#[FlowGroup('name')]`** — Gruppiert Flows im Dashboard. Details: `references/framework-concepts.md`
 
-1. Eine Message wird produziert (Start: InitMessage)
-2. Der Runner schlägt in der `messageToStepsMap` nach, welche Steps diese Message konsumieren
-3. Für jeden konsumierenden Step: prüfe ob **alle** benötigten Messages verfügbar sind (`executableMessages`)
-4. Wenn ja → Step ausführen → Ergebnis verarbeiten (siehe Step Return-Types)
-5. Bei `MessageDataInterface`-Return → **rekursiver Aufruf** mit der neuen Message (zurück zu Schritt 2)
-
-### Branching — Mehrere Steps konsumieren dieselbe Message
-
-Wenn mehrere Steps dieselbe Message als Constructor-Parameter deklarieren, werden **alle** getriggert wenn diese Message produziert wird:
-
-```
-m1 → s1 → m2 → s2 → m3 (Hauptkette)
-              → s3 → bool (Seitenzweig, terminal)
-```
-
-Beide Steps (s2, s3) konsumieren m2. s2 führt die Hauptkette fort, s3 ist ein Seitenzweig der mit bool endet.
-
-### Convergence — Step wartet auf Messages aus verschiedenen Branches
-
-Ein Step kann Messages aus **verschiedenen Branches** benötigen. Er wird erst ausgeführt wenn **alle** seine Message-Dependencies verfügbar sind:
-
-```
-m1 → s1 → m2 → s2 → m3 → s4 → m4 ─┐
-              → s3 → m6 ────────────┤
-                                     └→ s5(m4+m6) → m5 (Return)
-```
-
-s5 benötigt sowohl m4 (aus dem Hauptzweig) als auch m6 (aus dem Seitenzweig). Der Runner führt s5 erst aus, wenn beide Messages produziert wurden.
-
-### Wichtige Regeln
-
-- **Erster Return gewinnt**: Nur die erste `MessageReturnInterface` wird als Flow-Ergebnis behalten, weitere werden ignoriert
-- **Terminal ohne Fehler**: Wenn eine Message keinen konsumierenden Step hat, kehrt die Rekursion einfach zurück — kein Fehler
-- **Keine Duplikat-Ausführung**: Jede Step+Message-Kombination wird maximal einmal ausgeführt
-
-## FlowEphemeral — Flows ohne Primary-Storage-Persistierung
-
-Das `#[FlowEphemeral]`-Attribut (`Wundii\Flowcrafter\Attribute\FlowEphemeral`) markiert einen Flow als kurzlebig. Ephemeral Flows überspringen alle Schreibvorgänge in die Primary Storage (MySQL, Redis, Esdb) und persistieren nur im SQLite Service-Index — inklusive einer JSON-Kopie für die Detail-Ansicht.
-
-```php
-use Wundii\Flowcrafter\Attribute\FlowEphemeral;
-
-#[FlowEphemeral(expiryDays: 7)]
-class HealthCheckFlow implements FlowInterface
-{
-    // ...
-}
-```
-
-| Parameter | Typ | Default | Beschreibung |
-|---|---|---|---|
-| `expiryDays` | `int` | `14` | Tage bis zur automatischen Löschung (min. 1) |
-
-**Verhalten:**
-- Kein Aufruf von `registerFlowSchema`, `registerFlowInstance`, `appendFlowRun`, `registerMessageSource`, `registerStepSource`, `appendFlowMessage`, `appendFlowResult` auf der Primary Storage
-- Stattdessen wird der komplette Flow als JSON in die SQLite-Tabelle `flow_ephemeral_list` geschrieben
-- `FlowScheduler::tick()` ruft `cleanupEphemeral()` auf und entfernt abgelaufene Einträge aus `flow_ephemeral_list`, `flow_list`, `flow_run_list` und `flow_exception_list`
-- In der REST-API-Antwort (`/api/flow/flow-details`) wird `isReadOnly: true`, `isExecutable: false` und ein `readOnlyReasons`-Eintrag gesetzt
-
-**Anwendungsfälle:** Health-Checks, Monitoring-Pings, temporäre Debug-Flows — alles was Metriken produziert aber nicht dauerhaft gespeichert werden muss.
-
-Nur hinzufügen wenn der User explizit ephemeral wünscht oder das Projekt bereits `#[FlowEphemeral]` verwendet.
-
-## FlowGroup — Flows im Dashboard gruppieren
-
-Das optionale `#[FlowGroup]`-Attribut (`Wundii\Flowcrafter\Attribute\FlowGroup`) gruppiert Flows im Flowcrafter-Dashboard:
-
-```php
-use Wundii\Flowcrafter\Attribute\FlowGroup;
-
-#[FlowGroup('weather')]
-class WeatherComfortFlow implements FlowInterface
-{
-    // ...
-}
-```
-
-Nur hinzufügen wenn der User explizit eine Gruppierung wünscht oder das Projekt bereits `#[FlowGroup]` verwendet.
-
-## EmptyInitMessage — Flow ohne externen Input
-
-Falls ein Flow keinen externen Input benötigt (z.B. ein Scheduler-getriggerter Flow), **keine eigene Init-Message erstellen**. Stattdessen die eingebaute Klasse verwenden:
-
-```php
-use Wundii\Flowcrafter\EmptyInitMessage;
-
-$flowBuilder = new FlowBuilder('flow.my-flow.v1', EmptyInitMessage::class);
-```
-
-Im ersten Step **muss** das `EmptyInitMessage`-Property `public readonly` sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
-
-```php
-class MyFirstStep implements StepInterface
-{
-    public function __construct(
-        public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
-    ) {}
-}
-```
-
-## Korrekte Imports
-
-```php
-use Wundii\Flowcrafter\AbstractMessage;
-use Wundii\Flowcrafter\FlowBuilder;
-use Wundii\Flowcrafter\FlowSchema;
-use Wundii\Flowcrafter\Interface\FlowInterface;
-use Wundii\Flowcrafter\Interface\StepInterface;
-use Wundii\Flowcrafter\Interface\MessageInitInterface;
-use Wundii\Flowcrafter\Interface\MessageDataInterface;
-use Wundii\Flowcrafter\Interface\MessageReturnInterface;
-use Wundii\Flowcrafter\EmptyInitMessage;
-use Wundii\Flowcrafter\Attribute\FlowEphemeral;
-use Wundii\Flowcrafter\Attribute\FlowGroup;
-use Wundii\Flowcrafter\Attribute\FlowSchedule;
-use Wundii\Flowcrafter\Schedule\AbstractSchedule;
-```
-
-## Directory-Conventions
-
-**Symfony-Projekte** (häufiges Layout):
-```
-src/
-└── Flowcrafter/
-    ├── Flows/          ← *Flow.php
-    ├── Steps/          ← *Step.php
-    ├── Messages/       ← *Message.php
-    └── Schedules/      ← *Schedule.php
-```
-
-**Pure PHP**:
-```
-src/
-├── Flow/
-├── Step/
-├── Message/
-└── Schedule/
-```
-
-Immer Glob verwenden um die tatsächliche Konvention im Projekt zu bestätigen!
+Beide nur hinzufügen wenn der User es wünscht oder das Projekt sie bereits verwendet.
 
 ## Code-Defaults
 
 Beim Generieren von Flowcrafter-Code immer:
 
 - `declare(strict_types=1)` setzen
-- Messages: `readonly class` mit Constructor Property Promotion, Properties **`public`** (kein Getter) — außer der User wünscht explizit `private` + Getter
+- Messages: `readonly class` mit Constructor Property Promotion, Properties **`public`** (kein Getter)
 - Steps: reguläre Klasse, `private readonly` Constructor-Parameter
 - Flows: reguläre Klasse mit `public static function schema(): FlowSchema`
 - Schedules: reguläre Klasse mit `public function process(): void`
 - Alle Parameter und Return-Types explizit typisieren
 - Suffixe: `*Message`, `*Step`, `*Flow`, `*Schedule`
+
+## Directory-Conventions
+
+**Symfony-Projekte:**
+```
+src/Flowcrafter/{Flows,Steps,Messages,Schedules}/
+```
+
+**Pure PHP:**
+```
+src/{Flow,Step,Message,Schedule}/
+```
+
+Immer Glob verwenden um die tatsächliche Konvention im Projekt zu bestätigen!
 
 ## Framework-Detection
 
@@ -389,4 +244,5 @@ Vor der Code-Generierung in einem unbekannten Projekt:
 
 ## Weiterführende Details
 
-- `references/framework-concepts.md` — Message Routing, Execution Lifecycle, Symfony Bundle Integration
+- `references/execution-model.md` — Rekursive Ausführung, Branching, Convergence, Regeln
+- `references/framework-concepts.md` — Message Routing, Lifecycle, Retry, Ephemeral, FlowGroup, EmptyInitMessage, DI, Testing, Imports
