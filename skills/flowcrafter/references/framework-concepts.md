@@ -2,13 +2,14 @@
 
 ## Message Routing Mechanismus
 
-Flowcrafter baut einen internen Dependency-Graph aus den Constructor-Signaturen der Steps:
+Flowcrafter baut beim `build()` eine `messageToStepsMap` aus den Constructor-Signaturen der Steps:
 
 1. Für jeden Step reflektiert die Engine dessen Constructor
-2. Parameter deren Typen `AbstractMessage` extenden oder ein Message-Interface implementieren → **Message-Dependencies** (auto-injected aus dem Flow-Message-Store)
+2. Parameter deren Typen `AbstractMessage` extenden oder ein Message-Interface implementieren → **Message-Dependencies** (auto-injected aus dem Flow-Message-Pool)
 3. Alle anderen Parameter → **Service-Dependencies** (per DI-Container aufgelöst)
-4. Die Engine ordnet die Step-Ausführung so, dass wenn Step B die Message von Step A benötigt, Step A zuerst läuft
-5. Rückgabewerte werden im Message-Store unter ihrem Klassennamen abgelegt
+4. Jeder Message-Typ wird auf die Steps gemappt, die ihn konsumieren → `messageToStepsMap`
+5. Mehrere Steps können denselben Message-Typ konsumieren (Branching)
+6. Ein Step kann mehrere Message-Typen benötigen (Convergence) — er wird erst ausgeführt wenn alle verfügbar sind
 
 **Wichtige Einschränkung**: Zwei Steps im selben Flow dürfen nicht denselben Message-Typ produzieren, da der zweite den ersten im Store überschreiben würde.
 
@@ -16,12 +17,17 @@ Flowcrafter baut einen internen Dependency-Graph aus den Constructor-Signaturen 
 
 1. Aufrufer übergibt eine Init-Message an den `FlowRunner`
 2. `FlowRunner` erstellt `Flow`-Instanz, validiert Schema-Hash
-3. Steps werden in Dependency-Reihenfolge instantiiert (DI + Message-Injection)
-4. `process()` jedes Steps wird aufgerufen. Return-Wert wird im Message-Store abgelegt
-5. Wenn der Step mit `MessageReturnInterface`-Return fertig ist → Flow beendet
-6. Die Return-Message wird an den Aufrufer zurückgegeben
+3. `executeStepsRecursive` wird mit der Init-Message aufgerufen
+4. Für die Message werden alle konsumierenden Steps aus der `messageToStepsMap` ermittelt
+5. Pro Step: `executableMessages`-Check — sind **alle** benötigten Messages verfügbar?
+6. Wenn ja → Step instantiieren (DI + Message-Injection) → `process()` aufrufen
+7. Ergebnis-Handling:
+   - `MessageDataInterface` → rekursiver Aufruf von `executeStepsRecursive` mit der neuen Message
+   - `MessageReturnInterface` → als Flow-Return gespeichert (nur der erste zählt)
+   - `bool` → als `FlowResult` gespeichert, Zweig endet
+8. Wenn alle Rekursionen abgeschlossen → Flow beendet, Return-Message an den Aufrufer
 
-**Message-Status**: `WAIT` → `PROCESS` → `FINISH`
+**Message-Status**: `WAIT` → `FINISH`
 
 ## Sync vs. Async Ausführung
 

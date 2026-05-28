@@ -26,7 +26,7 @@ Typisierte, immutable Datenobjekte. Drei Rollen:
 | Interface | Namespace | Zweck |
 |---|---|---|
 | `MessageInitInterface` | `Wundii\Flowcrafter\Interface\MessageInitInterface` | Eintrittspunkt des Flows. Auslöser-Input. |
-| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten zwischen Steps. Muss downstream konsumiert werden. |
+| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten zwischen Steps. Auf dem Hauptpfad zur ReturnMessage muss jede DataMessage konsumiert werden. Auf Seitenzweigen kann sie terminal enden. |
 | `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Output des Flows. Wird an den Aufrufer zurückgegeben. |
 
 Alle Messages extends `Wundii\Flowcrafter\AbstractMessage` und sind `readonly class` mit Constructor Property Promotion.
@@ -76,6 +76,14 @@ Zustandslose Verarbeitungseinheiten. Jeder Step:
 
 Flowcrafter erkennt per Reflection welche Messages ein Step benötigt. Constructor-Parameter mit Message-Typen → auto-injected. Andere Typen → per DI-Container.
 
+**Step Return-Types:**
+
+| Return-Type              | Verhalten                                                                                      |
+|--------------------------|------------------------------------------------------------------------------------------------|
+| `MessageDataInterface`   | Message wird im Flow abgelegt, der Runner triggert rekursiv alle Steps die diese Message konsumieren |
+| `MessageReturnInterface` | Flow-Ergebnis — nur der erste Return zählt, weitere werden ignoriert                           |
+| `bool`                   | Wird als `FlowResult` gespeichert, keine weitere Rekursion — Step-Zweig endet hier             |
+
 ```php
 class FetchWeatherStep implements StepInterface
 {
@@ -96,6 +104,37 @@ class FetchWeatherStep implements StepInterface
     }
 }
 ```
+
+### Step-Design-Leitfaden
+
+**Ein Step = eine Aufgabe.** Daten holen, Daten aufbereiten und per ntfy versenden sind drei Steps, nicht einer.
+
+**Vorgehen beim Planen:**
+
+1. Aufgaben identifizieren und linear als Steps auflisten
+2. Pro Step fragen: *Ist das Ergebnis relevant für die ReturnMessage?*
+   - **Ja** → Hauptkette (Step produziert DataMessage die downstream konsumiert wird)
+   - **Nein** → Seitenzweig (Step konsumiert eine Message aus der Hauptkette, Ergebnis endet terminal)
+
+**Return-Type für Seitenzweige:**
+
+| Situation                                        | Return-Type      |
+|--------------------------------------------------|------------------|
+| Simpel, selbsterklärend (Datei auf Blob legen)   | `bool`           |
+| Ergebnis soll inspizierbar sein (Datenquelle befüllt → sehen was geschrieben wurde) | Terminale Message |
+| Benachrichtigung (ntfy, E-Mail)                  | Judgment-Call — `bool` oder terminale Message je nach Debug-Bedarf |
+
+**Convergence-Pattern:**
+
+Wenn Daten aus verschiedenen Aufbereitungen zusammengeführt werden müssen, konsumiert ein nachgelagerter Step mehrere Messages:
+
+```
+m1 → s1 → m2 → s2 (externer Service) → m3 ─┐
+              → s3 (interne Logik)     → m4 ─┤
+                                              └→ s4(m3+m4) → m5 (Return)
+```
+
+s4 wird erst ausgeführt wenn beide Aufbereitungen (m3, m4) abgeschlossen sind.
 
 ### Flows
 
@@ -180,7 +219,46 @@ return $flowBuilder->build();
 3. **Keine Duplikate**: dieselbe Step-Klasse darf nicht zweimal per `addStep()` hinzugefügt werden
 4. **Kein Zyklus**: kein Zyklus im Message-Dependency-Graph
 5. **Alle Steps erreichbar**: jeder Step muss vom Init-Step aus über Message-Ketten erreichbar sein
-6. **MessageDataInterface abgedeckt**: jeder `MessageDataInterface`-Return-Type muss downstream konsumiert werden
+6. **Hauptpfad zur ReturnMessage intakt**: Es muss mindestens ein vollständiger Pfad von InitMessage zur ReturnMessage existieren — jede DataMessage auf diesem Pfad muss downstream konsumiert werden. DataMessages auf Seitenzweigen dürfen terminal enden (nicht konsumiert, bool-Return)
+
+## Execution-Modell
+
+Der `FlowRunner` arbeitet **rekursiv message-driven**, nicht linear Step für Step:
+
+1. Eine Message wird produziert (Start: InitMessage)
+2. Der Runner schlägt in der `messageToStepsMap` nach, welche Steps diese Message konsumieren
+3. Für jeden konsumierenden Step: prüfe ob **alle** benötigten Messages verfügbar sind (`executableMessages`)
+4. Wenn ja → Step ausführen → Ergebnis verarbeiten (siehe Step Return-Types)
+5. Bei `MessageDataInterface`-Return → **rekursiver Aufruf** mit der neuen Message (zurück zu Schritt 2)
+
+### Branching — Mehrere Steps konsumieren dieselbe Message
+
+Wenn mehrere Steps dieselbe Message als Constructor-Parameter deklarieren, werden **alle** getriggert wenn diese Message produziert wird:
+
+```
+m1 → s1 → m2 → s2 → m3 (Hauptkette)
+              → s3 → bool (Seitenzweig, terminal)
+```
+
+Beide Steps (s2, s3) konsumieren m2. s2 führt die Hauptkette fort, s3 ist ein Seitenzweig der mit bool endet.
+
+### Convergence — Step wartet auf Messages aus verschiedenen Branches
+
+Ein Step kann Messages aus **verschiedenen Branches** benötigen. Er wird erst ausgeführt wenn **alle** seine Message-Dependencies verfügbar sind:
+
+```
+m1 → s1 → m2 → s2 → m3 → s4 → m4 ─┐
+              → s3 → m6 ────────────┤
+                                     └→ s5(m4+m6) → m5 (Return)
+```
+
+s5 benötigt sowohl m4 (aus dem Hauptzweig) als auch m6 (aus dem Seitenzweig). Der Runner führt s5 erst aus, wenn beide Messages produziert wurden.
+
+### Wichtige Regeln
+
+- **Erster Return gewinnt**: Nur die erste `MessageReturnInterface` wird als Flow-Ergebnis behalten, weitere werden ignoriert
+- **Terminal ohne Fehler**: Wenn eine Message keinen konsumierenden Step hat, kehrt die Rekursion einfach zurück — kein Fehler
+- **Keine Duplikat-Ausführung**: Jede Step+Message-Kombination wird maximal einmal ausgeführt
 
 ## FlowEphemeral — Flows ohne Primary-Storage-Persistierung
 
