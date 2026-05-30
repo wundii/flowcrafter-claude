@@ -86,6 +86,7 @@ class {ClassName}Flow implements FlowInterface
 - `retries` und `delay` fließen in den Schema-Hash ein — Änderungen erfordern neue Flow-Version
 - Optional: `#[Wundii\Flowcrafter\Attribute\FlowGroup('group-name')]` auf die Klasse setzen um den Flow im Dashboard zu gruppieren — nur wenn der User es wünscht oder das Projekt es bereits verwendet
 - Optional: `#[Wundii\Flowcrafter\Attribute\FlowEphemeral(expiryDays: 14)]` auf die Klasse setzen für kurzlebige Flows die nicht in der Primary Storage persistiert werden (z.B. Health-Checks, Monitoring) — nur wenn der User es explizit wünscht. `expiryDays` (default 14, min 1) steuert die automatische Löschung aus dem Service-Index
+- **Nicht** `#[FlowSchedule]` auf den Flow setzen — dieses Attribut gehört auf die Schedule-Klasse (`AbstractSchedule`), nicht auf den Flow
 
 ## EmptyInitMessage — Flow ohne externen Input
 

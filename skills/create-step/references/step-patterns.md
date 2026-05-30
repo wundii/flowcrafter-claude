@@ -38,6 +38,42 @@ class FetchWeatherStep implements StepInterface
 
 In pure PHP: `$apiClient` muss im `dependenciesInjection`-Array des `FlowRunner` enthalten sein.
 
+## Side-Effect-Branch (Branching mit bool)
+
+Für Steps die nur Seiteneffekte ausführen (Notifications, Cache-Writes, Logging) und keine neuen Daten in den Flow einbringen — `bool` zurückgeben statt eine redundante Message-Klasse zu erstellen:
+
+```
+ComparedMessage → [StoreStep]  → ResultMessage   (terminaler Step)
+                → [AlertStep]  → bool            (Side-Effect-Branch)
+```
+
+Beide Steps konsumieren dieselbe Message (Branching). **Wichtig**: Gleichen Message-Typ als Input UND Output zu verwenden funktioniert nicht — zwei Steps dürfen nicht denselben Message-Typ produzieren, und das typbasierte Routing würde Konflikte verursachen.
+
+```php
+class AlertStep implements StepInterface
+{
+    public function __construct(
+        private readonly ComparedMessage $comparedMessage,
+        private readonly NtfyClient $ntfy,
+    ) {}
+
+    public function returnTypes(): array
+    {
+        return [];
+    }
+
+    public function process(): bool
+    {
+        // true → OK (auch wenn kein Alert nötig war)
+        // false → WARNING im Flow-Status (nur bei Fehler!)
+        $this->ntfy->send('Alert: ...');
+        return true;
+    }
+}
+```
+
+**Achtung**: `false` bedeutet WARNING im Flow-Status — nicht "kein Alert gesendet". Normale Zustände (kein Alert nötig, Bedingung nicht erfüllt) müssen `true` zurückgeben.
+
 ## Step mit Retry (fehleranfällige externe Operationen)
 
 Steps die HTTP-Calls, DB-Zugriffe oder andere fehleranfällige I/O durchführen, sollten im Flow mit `retries` und `delay` registriert werden:

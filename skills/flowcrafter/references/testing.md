@@ -159,7 +159,7 @@ public function flowWithoutAlertsSkipsNotification(): void
 
 | Situation                              | Empfehlung                               |
 |----------------------------------------|------------------------------------------|
-| Flow-Gesamtverhalten (Happy Path)      | `FlowTestCase::runFlow()`                |
+| Flow-Gesamtverhalten (Happy Path)      | `FlowTestCase::runFlow()` sch            |
 | Branching/Convergence korrekt?         | `FlowTestCase::runFlow()`                |
 | Einzelner Step mit komplexer Logik     | `FlowTestCase::runStep()` oder Unit-Test |
 | Service-Methoden isoliert              | Standard PHPUnit TestCase                |
@@ -170,3 +170,11 @@ public function flowWithoutAlertsSkipsNotification(): void
 use Wundii\Flowcrafter\Testing\FlowTestCase;
 use Wundii\Flowcrafter\Enum\StatusEnum;
 ```
+banking_transaction_id bank_account_id accounts_accounts_id gateway_account_id gateway_transaction_id parsed_transaction_id
+34108606	119448	267176	40596	6326600944	2147483647
+34108605	94451	142810	15961	6326570777	2147483647
+34108604	94451	142810	15961	6326570776	2147483647
+34108603	94451	142810	15961	6326570775	2147483647
+34108602	124757	283949	45773	6326578798	2147483647
+34108601	124757	283949	45773	6326578797	2147483647
+34108600	126131	271081	47152	6326570824	2147483647
