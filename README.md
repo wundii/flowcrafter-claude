@@ -43,6 +43,7 @@ Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe 
 | `/create-step` | Step-Klasse mit Message-Injection generieren | `/create-step FetchWeather` |
 | `/create-message` | Message-Klasse (init/data/return) generieren | `/create-message CityRequest init city:string` |
 | `/create-schedule` | Schedule-Klasse mit Cron-Ausdruck generieren | `/create-schedule WeatherComfort WeatherComfortFlow "0 * * * *"` |
+| `/create-projection` | Projection-Handler (Read Model / async Side-Effect) generieren | `/create-projection Order flow.order.v1 OrderValidatedMessage` |
 | `/analyze-flow` | Flow auf Fehler und Verbesserungen prüfen | `/analyze-flow WeatherComfortFlow` |
 
 ## Verwendung

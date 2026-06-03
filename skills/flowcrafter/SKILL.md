@@ -5,10 +5,12 @@ description: >
   "FlowBuilder", "StepInterface", "FlowInterface", "MessageInitInterface",
   "MessageDataInterface", "MessageReturnInterface", "AbstractMessage",
   "AbstractSchedule", "FlowSchedule", "FlowEphemeral", "FlowRunner", "FlowObserver",
+  "FlowProjection", "ProjectionHandlerInterface", "ProjectionWorker",
   asks to "create a flow", "add a step", "wire up messages",
   "build a workflow", "build a processing pipeline", "define a schedule",
+  "build a read model", "add a projection",
   or when PHP files named *Flow.php, *Step.php, *Message.php,
-  or *Schedule.php are being discussed. Also trigger when the user
+  *Schedule.php, or *Projection.php are being discussed. Also trigger when the user
   imports from "Wundii\Flowcrafter\" namespace.
 version: 1.0.0
 ---
@@ -170,6 +172,31 @@ class WeatherComfortSchedule extends AbstractSchedule
     }
 }
 ```
+
+### Projections (Read Models)
+
+Asynchrone, entkoppelte Verarbeitung der Messages eines Flows — für Read Models, Notifications, Side-Effects. Ein Projection-Handler:
+
+- Implementiert `Wundii\Flowcrafter\Interface\ProjectionHandlerInterface`
+- Ist mit `#[Wundii\Flowcrafter\Attribute\FlowProjection(flowTypes)]` dekoriert (ein oder mehrere Flow-Type-Strings; pro Flow-Typ genau **ein** Handler)
+- Bindet Methoden per `#[Wundii\Flowcrafter\Attribute\FlowProjectionMessage(MessageSource::class)]` an Message-Sources
+- Jede Methode bekommt eine `Wundii\Flowcrafter\FlowMessageReadonly` (die Original-Message wird **nicht** instanziiert)
+- Daten-Zugriff: `$flowMessage->getMessage()->getRawData()` liefert `array<string, mixed>`; Metadaten via `getFlowHash()`, `getFlowType()`, `getMessageSource()`, `getTime()`
+
+```php
+#[FlowProjection('flow.order.v1')]
+class OrderProjection implements ProjectionHandlerInterface
+{
+    #[FlowProjectionMessage(OrderValidatedMessage::class)]
+    public function onValidated(FlowMessageReadonly $flowMessage): void
+    {
+        $data = $flowMessage->getMessage()->getRawData();
+        // Read Model idempotent upserten (Queue ist at-least-once)
+    }
+}
+```
+
+Der `FlowRunner` schreibt jede finalisierte `FlowMessage` inkrementell in die Projection-Queue — aber nur, wenn ein Handler den Flow-Typ abonniert. Der `ProjectionWorker` (`vendor/bin/flowcrafter projection:worker`) arbeitet die Queue ab. **At-least-once**: Handler-Methoden müssen idempotent sein; eine geworfene Exception wird als `ProjectionException` persistiert und die Message dennoch acked. Handler werden automatisch aus dem Composer-Classmap entdeckt.
 
 ## FlowBuilder DSL
 
