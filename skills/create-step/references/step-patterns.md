@@ -36,7 +36,7 @@ class FetchWeatherStep implements StepInterface
 }
 ```
 
-In pure PHP: `$apiClient` muss im `dependenciesInjection`-Array des `FlowRunner` enthalten sein.
+In pure PHP: `$apiClient` muss in der `DependencyRegistry` des `FlowRunner` registriert sein (z.B. `->autowire(OpenWeatherMapClient::class)` oder `->instance(new OpenWeatherMapClient())`).
 
 ## Side-Effect-Branch (Branching mit bool)
 
@@ -176,14 +176,14 @@ public function process(): bool
 
 `returnTypes()` kann in diesem Fall `[]` zurückgeben oder weggelassen werden (leeres Array).
 
-## Step für pure PHP (kein DI-Container)
+## Step für pure PHP (manuelle Service-Registrierung)
 
 ```php
 class ManualServiceStep implements StepInterface
 {
     public function __construct(
         private readonly SomeMessage $message,
-        private readonly MyService $service, // muss in dependenciesInjection des FlowRunner sein
+        private readonly MyService $service, // muss in der DependencyRegistry des FlowRunner registriert sein
     ) {}
 }
 
@@ -192,6 +192,7 @@ $runner = new FlowRunner(
     type: 'flow.my-flow.v1',
     flowSource: MyFlow::class,
     storage: $storage,
-    dependenciesInjection: [new MyService()],
+    dependencyRegistry: (new DependencyRegistry())
+        ->instance(new MyService()),
 );
 ```

@@ -85,7 +85,7 @@ Diesen Hinweis im generierten Code als Kommentar setzen.
 
 ## Schritt 5: Service-Abhängigkeiten (DI)
 
-Handler werden über den Symfony-Container instanziiert (autowiring + `dependenciesInjection` aus der `flowcrafter.php`). Service-Dependencies einfach als `private readonly` Constructor-Parameter deklarieren:
+Handler werden über den Symfony-Container instanziiert (Autowiring + `DependencyRegistry` aus der `flowcrafter.php`, gesetzt via `setDependencyRegistry()`). Service-Dependencies einfach als `private readonly` Constructor-Parameter deklarieren:
 
 ```php
 public function __construct(

@@ -37,7 +37,7 @@ Parse das erste Token als Step-Name (PascalCase, `Step`-Suffix wird hinzugefügt
 Flowcrafter verwendet Reflection zur Auto-Discovery:
 
 - **Message-Parameter**: Constructor-Parameter deren Typen `AbstractMessage` extenden oder Message-Interfaces implementieren → werden vom Engine aus dem Message-Store injiziert
-- **Service-Parameter**: alle anderen Constructor-Parameter → werden per DI-Container aufgelöst (Symfony Autowiring oder `dependenciesInjection`-Array)
+- **Service-Parameter**: alle anderen Constructor-Parameter → werden per DI-Container aufgelöst (Symfony Autowiring oder über die `DependencyRegistry`)
 - Alle Parameter: `private readonly` — **Ausnahme**: `EmptyInitMessage` muss `public readonly` sein (siehe unten)
 - Reihenfolge: Messages zuerst (Konvention aus bestehenden Beispielen)
 

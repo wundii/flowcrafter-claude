@@ -37,7 +37,9 @@ $runner = new FlowRunner(
     type: $schema->type(),
     flowSource: WeatherComfortFlow::class,
     storage: $storage,
-    dependenciesInjection: [$service1, $service2],
+    dependencyRegistry: (new DependencyRegistry())
+        ->instance($service1)
+        ->instance($service2),
 );
 $result = $runner->run(message: new CityRequestMessage('Tokyo'));
 ```
@@ -160,28 +162,39 @@ Jeder Flow hat einen Content-Hash (MD5 des Schemas). Beim Ausführen prüft Flow
 
 Flowcrafter nutzt intern Symfony `ContainerBuilder` (`symfony/dependency-injection`) für Autowiring. Es gibt **kein Symfony-Bundle** — Flowcrafter ist eine eigenständige Library.
 
-Service-Dependencies für Steps und Schedules werden über das `dependenciesInjection`-Array konfiguriert — drei Modi:
+Service-Dependencies für Steps, Schedules und Projection-Handler werden über die fluent `DependencyRegistry` (`src/DependencyInjection/DependencyRegistry.php`) konfiguriert. Sie ersetzt das frühere gemischte `dependenciesInjection`-Array — jeder Registrierungs-Modus ist eine benannte Methode statt einer impliziten Key/Value-Konvention:
 
-| Schlüssel | Wert | Verhalten |
-|---|---|---|
-| ohne Schlüssel | `class-string` | Klasse wird per Autowiring registriert |
-| ohne Schlüssel | `object` | Konkrete Instanz, gebunden an eigene Klasse |
-| Interface-Klassenname | `object` | Instanz wird an Interface und konkrete Klasse gebunden (Alias) |
+| Methode | Verhalten |
+|---|---|
+| `instance(object)` | Synthetic: fertige Instanz, gebunden an die eigene Klasse |
+| `bind(string $id, object\|class-string)` | Interface-Binding: Objekt → synthetic + Alias; class-string → Autowire + Alias |
+| `autowire(class-string)` | Eine einzelne Klasse per Name autowiren |
+| `autowireNamespace(string)` | Jede instanziierbare Klasse unter einem PSR-4-Namespace-Prefix autowiren |
+| `autowireDirectory(string)` | Jede instanziierbare Klasse unter einem Verzeichnis autowiren |
+| `factory(class-string, Closure, ?alias)` | Lazy: Closure erhält den PSR-11-Container und liefert den Service (optionaler Alias) |
 
 ```php
+use Wundii\Flowcrafter\DependencyInjection\DependencyRegistry;
+
+$registry = (new DependencyRegistry())
+    ->bind(HttpClientInterface::class, new CurlHttpClient()) // Interface → Objekt (+ Alias)
+    ->instance(new MyLogger())                               // synthetic, an eigene Klasse gebunden
+    ->autowire(SomeService::class)                           // einzelne Klasse autowiren
+    ->autowireNamespace('App\\Service');                     // ganzen Namespace autowiren
+
 $flowRunner = new FlowRunner(
     type: 'flow.order.v1',
     flowSource: OrderFlow::class,
     storage: $storage,
-    dependenciesInjection: [
-        HttpClientInterface::class => new CurlHttpClient(),
-        new MyLogger(),
-        SomeService::class,
-    ],
+    dependencyRegistry: $registry,
 );
 ```
 
-Dasselbe Array gilt für `FlowcrafterConfig::setDependenciesInjection()` (Service/Observer), `FlowScheduler` und `FlowAssertTrait` (Tests).
+Autowiring registriert nur **Definitionen** (lazy, shared) — Services werden erst beim ersten `get()` instanziiert. Rohe Scalar-Config (API-Keys, Hosts) am besten in kleine Value-Objekte verpacken und per `instance()` registrieren, damit der Graph voll autowirebar bleibt; `factory()` ist dann selten nötig.
+
+**`Env`-Helper** (`src/Env.php`) — typisierter Reader für Environment-Variablen statt `(string) getenv('KEY') ?: 'default'`: `Env::string($key, $default)`, `Env::int($key, $default)`, `Env::bool($key, $default)`. Jeder fällt auf den Default zurück, wenn die Variable nicht gesetzt **oder** leer ist.
+
+Dieselbe `DependencyRegistry` wird durch `FlowRunner`, `FlowScheduler`, `FlowObserver`, `ProjectionWorker`, `AbstractSchedule` und `FlowAssertTrait` (Tests) gefädelt; aufgelöst in `FlowContainerFactory::build()`. Global gesetzt via `FlowcrafterConfig::setDependencyRegistry(DependencyRegistry)` (ersetzt das frühere `setDependenciesInjection()`).
 
 ## Flow-Versionierung
 
@@ -232,14 +245,13 @@ Verfügbare Assertions:
 | `assertFlowExceptionFrom(class, ?msg)` | Exception von bestimmtem Step (optional mit Message-Substring) |
 | `assertFlowRunCount(int)` | Anzahl Runs |
 
-DI im Test via `dependencies`-Parameter:
+DI im Test via `dependencyRegistry`-Parameter:
 ```php
 $this->runFlow(
     flowType: 'flow.weather-comfort.v2',
     flowSource: WeatherComfortFlow::class,
     initMessage: new CityRequestMessage('Tokyo'),
-    dependencies: [
-        HttpClientInterface::class => new FakeHttpClient(),
-    ],
+    dependencyRegistry: (new DependencyRegistry())
+        ->bind(HttpClientInterface::class, new FakeHttpClient()),
 );
 ```

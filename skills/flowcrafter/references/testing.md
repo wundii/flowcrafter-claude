@@ -22,23 +22,22 @@ $this->runFlow(
     flowType: 'flow.openweathermap.v1',
     flowSource: OpenWeatherMapFlow::class,
     initMessage: new OpenWeatherMapRequestMessage(51.5833, 8.1667),
-    dependencies: [
-        HttpClientInterface::class => $mockHttpClient,
-        new MockNtfyService(),
-    ],
+    dependencyRegistry: (new DependencyRegistry())
+        ->bind(HttpClientInterface::class, $mockHttpClient)
+        ->instance(new MockNtfyService()),
 );
 ```
 
 **Parameter:**
 
-| Parameter      | Typ                           | Beschreibung                                 |
-|----------------|-------------------------------|----------------------------------------------|
-| `flowType`     | `string`                      | Flow-Type-String (z.B. `flow.my-flow.v1`)    |
-| `flowSource`   | `class-string<FlowInterface>` | Flow-Klasse                                  |
-| `initMessage`  | `MessageInterface`            | Init-Message für den Flow                    |
-| `flowSubject`  | `?string`                     | Optionaler Business-Key                      |
-| `dependencies` | `array`                       | DI-Abhängigkeiten (Services, Mocks)          |
-| `includeSteps` | `class-string[]`              | Nur diese Steps ausführen (für Partial-Runs) |
+| Parameter            | Typ                           | Beschreibung                                 |
+|----------------------|-------------------------------|----------------------------------------------|
+| `flowType`           | `string`                      | Flow-Type-String (z.B. `flow.my-flow.v1`)    |
+| `flowSource`         | `class-string<FlowInterface>` | Flow-Klasse                                  |
+| `initMessage`        | `MessageInterface`            | Init-Message für den Flow                    |
+| `flowSubject`        | `?string`                     | Optionaler Business-Key                      |
+| `dependencyRegistry` | `DependencyRegistry`          | DI-Registry (Services, Mocks) — fluent       |
+| `includeSteps`       | `class-string[]`              | Nur diese Steps ausführen (für Partial-Runs) |
 
 **Return:** `bool|MessageReturnInterface` — das Flow-Ergebnis.
 
@@ -52,19 +51,25 @@ $result = $this->runStep(
     messages: [
         new OpenWeatherMapRequestMessage(51.5833, 8.1667),
     ],
-    dependencies: [
-        new OpenWeatherMapService($credentials, $mockHttpClient),
-    ],
+    dependencyRegistry: (new DependencyRegistry())
+        ->instance(new OpenWeatherMapService($credentials, $mockHttpClient)),
+
+    // optional für abstract Steps:
+    flowHash: $flowHash,
+    flowRuntimeHash: $flowRuntimeHash,
+    flowType: $flowType,
+    flowSchemaHash: $flowSchemaHash,
+    flowSubject: $flowSubject,
 );
 ```
 
 **Parameter:**
 
-| Parameter      | Typ                           | Beschreibung                     |
-|----------------|-------------------------------|----------------------------------|
-| `stepSource`   | `class-string<StepInterface>` | Step-Klasse                      |
-| `messages`     | `MessageInterface[]`          | Messages die der Step konsumiert |
-| `dependencies` | `array`                       | DI-Abhängigkeiten                |
+| Parameter            | Typ                           | Beschreibung                     |
+|----------------------|-------------------------------|----------------------------------|
+| `stepSource`         | `class-string<StepInterface>` | Step-Klasse                      |
+| `messages`           | `MessageInterface[]`          | Messages die der Step konsumiert |
+| `dependencyRegistry` | `DependencyRegistry`          | DI-Registry — fluent             |
 
 **Return:** `bool|MessageInterface` — das Step-Ergebnis.
 
@@ -128,7 +133,8 @@ public function flowWithAlertsSendsNotification(): void
         flowType: 'flow.weather.v1',
         flowSource: WeatherFlow::class,
         initMessage: new WeatherRequestMessage(51.5, 8.1),
-        dependencies: [/* mocks with alerts in response */],
+        dependencyRegistry: (new DependencyRegistry())
+            ->instance(/* mock with alerts in response */),
     );
 
     $this->assertFlowOk();
@@ -147,7 +153,8 @@ public function flowWithoutAlertsSkipsNotification(): void
         flowType: 'flow.weather.v1',
         flowSource: WeatherFlow::class,
         initMessage: new WeatherRequestMessage(51.5, 8.1),
-        dependencies: [/* mocks WITHOUT alerts */],
+        dependencyRegistry: (new DependencyRegistry())
+            ->instance(/* mock WITHOUT alerts */),
     );
 
     $this->assertFlowOk();
@@ -169,6 +176,7 @@ public function flowWithoutAlertsSkipsNotification(): void
 ```php
 use Wundii\Flowcrafter\Testing\FlowTestCase;
 use Wundii\Flowcrafter\Enum\StatusEnum;
+use Wundii\Flowcrafter\DependencyInjection\DependencyRegistry;
 ```
 banking_transaction_id bank_account_id accounts_accounts_id gateway_account_id gateway_transaction_id parsed_transaction_id
 34108606	119448	267176	40596	6326600944	2147483647
