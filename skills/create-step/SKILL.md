@@ -22,12 +22,14 @@ Parse das erste Token als Step-Name (PascalCase, `Step`-Suffix wird hinzugefügt
 - "Welche Service-Abhängigkeiten braucht er?" (nicht-Message Constructor-Parameter)
 - "Welche Message gibt er zurück?" (Output-Message-Klasse)
 - "Ist dieser der terminale Step?" (gibt er `MessageReturnInterface` zurück?)
+- "Soll der Step einen weiteren Flow anstoßen?" (dann `extends AbstractStep` für `$this->enqueue()`/`$this->run()`)
 
 ## Schritt 1: Projekt-Kontext erkennen
 
 1. Glob auf `src/**/*Step.php` — bestehende Steps für Namespace und Directory
 2. Einen bestehenden Step lesen und bestätigen:
    - Namespace-Prefix (z.B. `App\Flowcrafter\Steps`)
+   - `implements StepInterface` oder `extends AbstractStep`?
    - Verwendet `process()` konkreten Return-Type oder `MessageDataInterface`?
    - Klassen-Stil: `final`, `readonly`, oder reguläre Klasse?
 3. `composer.json` auf Symfony prüfen
@@ -124,6 +126,56 @@ public function process(): MessageDataInterface
     return new FailureMessage(/* ... */);
 }
 ```
+
+## Schritt 4b: Sub-Flows triggern (`extends AbstractStep`)
+
+Soll der Step aus seiner `process()`-Logik heraus einen **weiteren Flow** starten, extends er `Wundii\Flowcrafter\AbstractStep` statt nur `StepInterface` zu implementieren. `AbstractStep` implementiert selbst `StepInterface` — `returnTypes()`/`process()` bleiben Pflicht. Zusätzlich stehen — analog zu `AbstractSchedule` — zwei Methoden bereit:
+
+- `$this->enqueue()` — Async: legt den Sub-Flow in die Queue (empfohlen)
+- `$this->run()` — Sync: führt den Sub-Flow direkt aus, blockiert bis Abschluss
+
+Beide haben dieselbe Signatur wie bei `AbstractSchedule`:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Flowcrafter\Steps;
+
+use App\Flowcrafter\Flows\{SubFlowClass};
+use App\Flowcrafter\Messages\{ConsumedMessage};
+use App\Flowcrafter\Messages\{SubFlowInitMessage};
+use App\Flowcrafter\Messages\{ReturnMessage};
+use Wundii\Flowcrafter\AbstractStep;
+use Wundii\Flowcrafter\Interface\MessageDataInterface;
+
+class {ClassName}Step extends AbstractStep
+{
+    public function __construct(
+        private readonly {ConsumedMessage} ${consumedMessageVar},
+    ) {}
+
+    /** @return class-string[] */
+    public function returnTypes(): array
+    {
+        return [{ReturnMessage}::class];
+    }
+
+    public function process(): MessageDataInterface
+    {
+        $this->enqueue(
+            flowSource: {SubFlowClass}::class,
+            message: new {SubFlowInitMessage}(/* ... */),
+            // flowSubject: 'optional-subject',
+        );
+
+        return new {ReturnMessage}(/* ... */);
+    }
+}
+```
+
+Reines `implements StepInterface` bleibt der Default — `extends AbstractStep` nur wählen, wenn der Step tatsächlich einen Sub-Flow anstößt.
 
 ## Schritt 5: Output
 

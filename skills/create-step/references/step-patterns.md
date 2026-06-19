@@ -196,3 +196,36 @@ $runner = new FlowRunner(
         ->instance(new MyService()),
 );
 ```
+
+## Sub-Flow triggern (`extends AbstractStep`)
+
+Soll ein Step aus seiner Logik heraus einen weiteren Flow starten, extends er `AbstractStep` (implementiert selbst `StepInterface`) und nutzt — analog zu `AbstractSchedule` — `$this->enqueue()` (async, empfohlen) oder `$this->run()` (sync, blockierend). Der Step gibt davon unabhängig weiterhin seine eigene Message zurück:
+
+```php
+use Wundii\Flowcrafter\AbstractStep;
+
+class DispatchOrderStep extends AbstractStep
+{
+    public function __construct(
+        private readonly OrderValidatedMessage $order,
+    ) {}
+
+    public function returnTypes(): array
+    {
+        return [OrderDispatchedMessage::class];
+    }
+
+    public function process(): MessageDataInterface
+    {
+        $this->enqueue(
+            flowSource: ShipmentFlow::class,
+            message: new ShipmentRequestMessage($this->order->orderId()),
+            // flowSubject: $this->order->orderId(),
+        );
+
+        return new OrderDispatchedMessage(/* ... */);
+    }
+}
+```
+
+Beide Methoden haben dieselbe Signatur wie bei `AbstractSchedule` (`flowSource`, `message`, optional `flowSubject`). In pure PHP wird der Sub-Flow über dieselbe `DependencyRegistry` aufgelöst, die durch den `FlowRunner` gefädelt wird. `extends AbstractStep` nur wählen, wenn der Step tatsächlich einen Sub-Flow anstößt — sonst `implements StepInterface`.

@@ -53,6 +53,11 @@ $result = $runner->run(message: new CityRequestMessage('Tokyo'));
 - `$this->enqueue()` → asynchron via Queue (empfohlen)
 - `$this->run()` → synchron, blockierend
 
+**Steps die Sub-Flows triggern** (`extends AbstractStep`):
+- Dieselben Methoden wie beim Schedule Dispatcher: `$this->enqueue()` (async) und `$this->run()` (sync)
+- Aus `process()` heraus aufrufbar, um einen weiteren Flow zu starten — der aktuelle Step gibt davon unabhängig seine eigene Message zurück
+- Signatur identisch zu `AbstractSchedule` (`flowSource`, `message`, optional `flowSubject`)
+
 ## Retry-Mechanismus
 
 Steps die externen I/O durchführen (HTTP-Calls, DB-Zugriffe) können automatisch bei Fehlern wiederholt werden:
@@ -144,6 +149,7 @@ use Wundii\Flowcrafter\FlowBuilder;
 use Wundii\Flowcrafter\FlowSchema;
 use Wundii\Flowcrafter\Interface\FlowInterface;
 use Wundii\Flowcrafter\Interface\StepInterface;
+use Wundii\Flowcrafter\AbstractStep;
 use Wundii\Flowcrafter\Interface\MessageInitInterface;
 use Wundii\Flowcrafter\Interface\MessageDataInterface;
 use Wundii\Flowcrafter\Interface\MessageReturnInterface;
@@ -194,7 +200,7 @@ Autowiring registriert nur **Definitionen** (lazy, shared) — Services werden e
 
 **`Env`-Helper** (`src/Env.php`) — typisierter Reader für Environment-Variablen statt `(string) getenv('KEY') ?: 'default'`: `Env::string($key, $default)`, `Env::int($key, $default)`, `Env::bool($key, $default)`. Jeder fällt auf den Default zurück, wenn die Variable nicht gesetzt **oder** leer ist.
 
-Dieselbe `DependencyRegistry` wird durch `FlowRunner`, `FlowScheduler`, `FlowObserver`, `ProjectionWorker`, `AbstractSchedule` und `FlowAssertTrait` (Tests) gefädelt; aufgelöst in `FlowContainerFactory::build()`. Global gesetzt via `FlowcrafterConfig::setDependencyRegistry(DependencyRegistry)` (ersetzt das frühere `setDependenciesInjection()`).
+Dieselbe `DependencyRegistry` wird durch `FlowRunner`, `FlowScheduler`, `FlowObserver`, `ProjectionWorker`, `AbstractSchedule`, `AbstractStep` (für `enqueue()`/`run()`-getriggerte Sub-Flows) und `FlowAssertTrait` (Tests) gefädelt; aufgelöst in `FlowContainerFactory::build()`. Global gesetzt via `FlowcrafterConfig::setDependencyRegistry(DependencyRegistry)` (ersetzt das frühere `setDependenciesInjection()`).
 
 ## Flow-Versionierung
 

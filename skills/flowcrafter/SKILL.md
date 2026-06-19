@@ -4,7 +4,7 @@ description: >
   This skill should be used when the user discusses Flowcrafter, mentions
   "FlowBuilder", "StepInterface", "FlowInterface", "MessageInitInterface",
   "MessageDataInterface", "MessageReturnInterface", "AbstractMessage",
-  "AbstractSchedule", "FlowSchedule", "FlowEphemeral", "FlowRunner", "FlowObserver",
+  "AbstractStep", "AbstractSchedule", "FlowSchedule", "FlowEphemeral", "FlowRunner", "FlowObserver",
   "FlowProjection", "ProjectionHandlerInterface", "ProjectionWorker",
   asks to "create a flow", "add a step", "wire up messages",
   "build a workflow", "build a processing pipeline", "define a schedule",
@@ -54,7 +54,7 @@ Nur auf `private` + Getter wechseln wenn der User es explizit wünscht.
 
 Zustandslose Verarbeitungseinheiten. Jeder Step:
 
-- Implementiert `Wundii\Flowcrafter\Interface\StepInterface`
+- Implementiert `Wundii\Flowcrafter\Interface\StepInterface` **oder** extends `Wundii\Flowcrafter\AbstractStep` (das `StepInterface` implementiert)
 - Deklariert verbrauchte Messages als typisierte Constructor-Parameter (auto-injected)
 - Deklariert Service-Abhängigkeiten als weitere Constructor-Parameter (per DI-Container)
 - Gibt mögliche Return-Types in `returnTypes(): array` als FQCN-Array an
@@ -87,6 +87,38 @@ class FetchWeatherStep implements StepInterface
     }
 }
 ```
+
+**Sub-Flows aus einem Step triggern:** Extends ein Step `AbstractStep`, stehen ihm — analog zu `AbstractSchedule` — `$this->enqueue()` (async via Queue) und `$this->run()` (synchron, blockierend) zur Verfügung, um aus `process()` heraus einen weiteren Flow zu starten:
+
+```php
+use Wundii\Flowcrafter\AbstractStep;
+
+class DispatchOrderStep extends AbstractStep
+{
+    public function __construct(
+        private readonly OrderValidatedMessage $order,
+    ) {}
+
+    /** @return class-string[] */
+    public function returnTypes(): array
+    {
+        return [OrderDispatchedMessage::class];
+    }
+
+    public function process(): MessageDataInterface
+    {
+        $this->enqueue(
+            flowSource: ShipmentFlow::class,
+            message: new ShipmentRequestMessage($this->order->orderId()),
+            // flowSubject: $this->order->orderId(),
+        );
+
+        return new OrderDispatchedMessage(/* ... */);
+    }
+}
+```
+
+Beide Methoden haben dieselbe Signatur wie bei `AbstractSchedule`. `StepInterface` direkt zu implementieren reicht weiterhin — `AbstractStep` nur verwenden, wenn der Step einen weiteren Flow anstoßen soll.
 
 ### Step-Design-Leitfaden
 
