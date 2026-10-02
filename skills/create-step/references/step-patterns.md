@@ -9,6 +9,7 @@ class ConvertWeatherStep implements StepInterface
         private readonly RawWeatherMessage $rawWeather,
     ) {}
 
+    /** @return class-string[] */
     public function returnTypes(): array
     {
         return [WeatherDataMessage::class];
@@ -17,14 +18,14 @@ class ConvertWeatherStep implements StepInterface
     public function process(): MessageDataInterface
     {
         return new WeatherDataMessage(
-            celsius: round(($this->rawWeather->getTempKelvin() - 273.15), 1),
-            city: $this->rawWeather->getCity(),
+            celsius: round($this->rawWeather->tempKelvin - 273.15, 1),
+            city: $this->rawWeather->city,
         );
     }
 }
 ```
 
-## Step mit Service-Dependency (Symfony Autowiring)
+## Step mit Service-Dependency
 
 ```php
 class FetchWeatherStep implements StepInterface
@@ -33,21 +34,33 @@ class FetchWeatherStep implements StepInterface
         private readonly CityRequestMessage $cityRequestMessage,  // Message — auto-injected
         private readonly OpenWeatherMapClient $apiClient,          // Service — DI-injected
     ) {}
+
+    // returnTypes(), process() ...
 }
 ```
 
-In pure PHP: `$apiClient` muss in der `DependencyRegistry` des `FlowRunner` registriert sein (z.B. `->autowire(OpenWeatherMapClient::class)` oder `->instance(new OpenWeatherMapClient())`).
+Der Service wird vom **Flowcrafter-eigenen** Container aufgelöst — unabhängig davon, ob die Host-App Symfony nutzt. Er muss in der `DependencyRegistry` registriert sein:
+
+```php
+// flowcrafter.php
+$flowcrafterConfig->setDependencyRegistry(
+    (new DependencyRegistry())
+        ->autowire(OpenWeatherMapClient::class),      // Klasse autowiren
+        // ->instance(new OpenWeatherMapClient(...))  // oder fertige Instanz
+        // ->bind(WeatherClientInterface::class, OpenWeatherMapClient::class) // Interface
+);
+```
 
 ## Side-Effect-Branch (Branching mit bool)
 
-Für Steps die nur Seiteneffekte ausführen (Notifications, Cache-Writes, Logging) und keine neuen Daten in den Flow einbringen — `bool` zurückgeben statt eine redundante Message-Klasse zu erstellen:
+Für Steps die nur Seiteneffekte ausführen (Notifications, Cache-Writes, Logging) und keine neuen Daten in den Flow einbringen — `bool` zurückgeben statt eine Message-Klasse zu erstellen:
 
 ```
-ComparedMessage → [StoreStep]  → ResultMessage   (terminaler Step)
+ComparedMessage → [StoreStep]  → ResultMessage   (Hauptkette, terminal)
                 → [AlertStep]  → bool            (Side-Effect-Branch)
 ```
 
-Beide Steps konsumieren dieselbe Message (Branching). **Wichtig**: Gleichen Message-Typ als Input UND Output zu verwenden funktioniert nicht — zwei Steps dürfen nicht denselben Message-Typ produzieren, und das typbasierte Routing würde Konflikte verursachen.
+Beide Steps konsumieren dieselbe Message (Branching). Eine eigene DataMessage als Ende des Seitenzweigs ist **nicht** möglich (unkonsumiert → `build()` schlägt fehl), eine zweite Return-Message würde mit dem Flow-Ergebnis konkurrieren. Ebenso wenig darf der Seitenzweig denselben Message-Typ produzieren, den er konsumiert, oder den ein anderer Step produziert.
 
 ```php
 class AlertStep implements StepInterface
@@ -57,6 +70,7 @@ class AlertStep implements StepInterface
         private readonly NtfyClient $ntfy,
     ) {}
 
+    /** @return class-string[] */
     public function returnTypes(): array
     {
         return [];
@@ -64,15 +78,22 @@ class AlertStep implements StepInterface
 
     public function process(): bool
     {
-        // true → OK (auch wenn kein Alert nötig war)
-        // false → WARNING im Flow-Status (nur bei Fehler!)
-        $this->ntfy->send('Alert: ...');
+        if (!$this->comparedMessage->hasAlerts) {
+            return true; // nichts zu tun — Normalfall, kein WARNING
+        }
+
+        try {
+            $this->ntfy->send('Alert: ...');
+        } catch (NtfyException) {
+            return false; // Flow läuft weiter, Status WARNING
+        }
+
         return true;
     }
 }
 ```
 
-**Achtung**: `false` bedeutet WARNING im Flow-Status — nicht "kein Alert gesendet". Normale Zustände (kein Alert nötig, Bedingung nicht erfüllt) müssen `true` zurückgeben.
+**Achtung**: `false` bedeutet WARNING im Flow-Status — nicht "kein Alert gesendet". Normale Zustände (kein Alert nötig, Bedingung nicht erfüllt) müssen `true` zurückgeben. Eine ungefangene Exception bricht dagegen den **ganzen** Flow ab (auch die Hauptkette) — nur sinnvoll, wenn der Seiteneffekt geschäftskritisch ist.
 
 ## Step mit Retry (fehleranfällige externe Operationen)
 
@@ -86,7 +107,10 @@ $flowBuilder->addStep(FetchWeatherStep::class, retries: 3, delay: 500);
 Der Step selbst bleibt unverändert — die Retry-Logik ist im `FlowRunner` implementiert:
 - Bei Exception wird `process()` erneut aufgerufen (neue Step-Instanz)
 - Jeder Fehlversuch wird als `FlowRetry`-Eintrag im Flow persistiert
-- Nach Erschöpfung aller Retries wird die Exception als `FlowException` geworfen
+- Nach Erschöpfung aller Retries wird eine `FlowException` persistiert und die Exception weitergeworfen
+- Der `delay` blockiert den Worker-Prozess
+
+Damit Retries greifen, muss der Step bei Fehlern **werfen** (nicht `false` zurückgeben).
 
 **Wann `retries` setzen:**
 - HTTP/API-Calls (Netzwerk-Timeouts, Rate-Limits)
@@ -96,25 +120,39 @@ Der Step selbst bleibt unverändert — die Retry-Logik ist im `FlowRunner` impl
 **Wann NICHT:**
 - Reine Transformations-Steps (deterministische Logik)
 - Validierungs-Steps (Fehler ist gewollt, kein Retry sinnvoll)
+- Nicht-idempotente Aufrufe, bei denen ein Timeout trotzdem ausgeführt worden sein kann (z.B. Zahlung ohne Idempotency-Key)
+
+## Step mit nicht wiederholbarem Seiteneffekt (runOnce)
+
+```php
+// Im Flow:
+$flowBuilder->addStep(ChargeCreditCardStep::class, runOnce: true);
+```
+
+Bei einem Re-Run einer bestehenden Flow-Instanz wird der Step nicht erneut ausgeführt, wenn bereits ein Ergebnis (Message oder `FlowResult`) existiert — das gespeicherte Ergebnis wird weitergereicht. Für Zahlung, E-Mail-Versand, externe Buchungen.
 
 ## Mehrere Return-Types (Conditional Branching)
 
-Beide Types müssen downstream von einem Step konsumiert werden (oder `MessageReturnInterface` sein):
+Alle Types müssen downstream von einem Step konsumiert werden (oder die eine Return-Message des Flows sein):
 
 ```php
+/** @return class-string[] */
 public function returnTypes(): array
 {
     return [SunnyDayMessage::class, RainyDayMessage::class];
 }
 
-public function process(): MessageDataInterface
+public function process(): SunnyDayMessage|RainyDayMessage
 {
-    if ($this->weather->getCloudCover() < 30) {
-        return new SunnyDayMessage($this->weather->getCity());
+    if ($this->weather->cloudCover < 30) {
+        return new SunnyDayMessage($this->weather->city);
     }
-    return new RainyDayMessage($this->weather->getCity());
+
+    return new RainyDayMessage($this->weather->city);
 }
 ```
+
+Nur der Zweig der tatsächlich produzierten Message läuft weiter. Ein nachgelagerter Step, der **beide** Messages konsumiert, würde nie ausgeführt.
 
 ## Fan-in: Mehrere Messages konsumieren
 
@@ -128,18 +166,21 @@ class ResultProcessStep implements StepInterface
         private readonly BatteryStatusMessage $batteryStatus, // von BatteriespeicherStep
     ) {}
 
+    /** @return class-string[] */
     public function returnTypes(): array
     {
         return [EnergyReportMessage::class];
     }
+
+    // process() ...
 }
 ```
 
-Beide `PvOutputMessage` und `BatteryStatusMessage` müssen von anderen Steps im selben Flow produziert werden.
+Beide `PvOutputMessage` und `BatteryStatusMessage` müssen von (verschiedenen) anderen Steps im selben Flow produziert werden.
 
 ## Terminaler Step (Flow-Output)
 
-Der Step gibt die Return-Message des Flows zurück:
+Der Step gibt die Return-Message des Flows zurück — pro Flow sollte genau ein Step das tun:
 
 ```php
 class SummaryReportStep implements StepInterface
@@ -148,6 +189,7 @@ class SummaryReportStep implements StepInterface
         private readonly ActivityPlanMessage $activityPlan,
     ) {}
 
+    /** @return class-string[] */
     public function returnTypes(): array
     {
         return [WeatherReportMessage::class]; // implements MessageReturnInterface
@@ -156,7 +198,7 @@ class SummaryReportStep implements StepInterface
     public function process(): MessageReturnInterface
     {
         return new WeatherReportMessage(
-            summary: $this->activityPlan->getSummary(),
+            summary: $this->activityPlan->summary,
         );
     }
 }
@@ -164,52 +206,29 @@ class SummaryReportStep implements StepInterface
 
 ## Bool-Rückgabe (FlowResult)
 
-Steps können auch `bool` zurückgeben — wird als `FlowResult` aufgezeichnet:
+Steps können `bool` zurückgeben — wird als `FlowResult` aufgezeichnet:
 
 ```php
 public function process(): bool
 {
-    $success = $this->sendNotification();
-    return $success; // true → OK, false → WARNING im Flow-Status
+    return $this->sendNotification(); // true → OK, false → WARNING im Flow-Status
 }
 ```
 
-`returnTypes()` kann in diesem Fall `[]` zurückgeben oder weggelassen werden (leeres Array).
-
-## Step für pure PHP (manuelle Service-Registrierung)
-
-```php
-class ManualServiceStep implements StepInterface
-{
-    public function __construct(
-        private readonly SomeMessage $message,
-        private readonly MyService $service, // muss in der DependencyRegistry des FlowRunner registriert sein
-    ) {}
-}
-
-// FlowRunner instantiieren:
-$runner = new FlowRunner(
-    type: 'flow.my-flow.v1',
-    flowSource: MyFlow::class,
-    storage: $storage,
-    dependencyRegistry: (new DependencyRegistry())
-        ->instance(new MyService()),
-);
-```
+`returnTypes()` muss trotzdem implementiert werden (Interface-Pflicht) und liefert in diesem Fall `[]`.
 
 ## Sub-Flow triggern (`extends AbstractStep`)
 
-Soll ein Step aus seiner Logik heraus einen weiteren Flow starten, extends er `AbstractStep` (implementiert selbst `StepInterface`) und nutzt — analog zu `AbstractSchedule` — `$this->enqueue()` (async, empfohlen) oder `$this->run()` (sync, blockierend). Der Step gibt davon unabhängig weiterhin seine eigene Message zurück:
+Siehe `../SKILL.md` → „Schritt 4b“. Kurzform:
 
 ```php
-use Wundii\Flowcrafter\AbstractStep;
-
 class DispatchOrderStep extends AbstractStep
 {
     public function __construct(
         private readonly OrderValidatedMessage $order,
     ) {}
 
+    /** @return class-string[] */
     public function returnTypes(): array
     {
         return [OrderDispatchedMessage::class];
@@ -219,8 +238,8 @@ class DispatchOrderStep extends AbstractStep
     {
         $this->enqueue(
             flowSource: ShipmentFlow::class,
-            message: new ShipmentRequestMessage($this->order->orderId()),
-            // flowSubject: $this->order->orderId(),
+            message: new ShipmentRequestMessage($this->order->orderId),
+            flowSubject: $this->order->orderId,
         );
 
         return new OrderDispatchedMessage(/* ... */);
@@ -228,4 +247,4 @@ class DispatchOrderStep extends AbstractStep
 }
 ```
 
-Beide Methoden haben dieselbe Signatur wie bei `AbstractSchedule` (`flowSource`, `message`, optional `flowSubject`). In pure PHP wird der Sub-Flow über dieselbe `DependencyRegistry` aufgelöst, die durch den `FlowRunner` gefädelt wird. `extends AbstractStep` nur wählen, wenn der Step tatsächlich einen Sub-Flow anstößt — sonst `implements StepInterface`.
+Storage, Queue und `DependencyRegistry` werden vom laufenden Runner übernommen. Ohne Queue wirft `enqueue()` eine `RuntimeException`.

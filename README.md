@@ -1,6 +1,6 @@
 # flowcrafter-claude
 
-Claude Code Plugin für die [Flowcrafter](https://github.com/wundii/flowcrafter) PHP Workflow-Engine. Hilft dabei, schneller und besser Flows, Steps, Messages und Schedules zu erstellen.
+Claude Code Plugin für die [Flowcrafter](https://github.com/wundii/flowcrafter) PHP Workflow-Engine. Hilft dabei, schneller und besser Flows, Steps, Messages, Schedules, Projections und Tests zu erstellen und bestehende Flows zu analysieren.
 
 ## Installation
 
@@ -37,6 +37,8 @@ Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe 
 
 ### Slash-Commands (user-invoked)
 
+Plugin-Skills sind namespaced: der volle Name ist `/flowcrafter:<skill>` (z.B. `/flowcrafter:create-flow`). Solange kein anderer Skill gleich heißt, funktioniert auch die Kurzform `/create-flow`. Alle Skills werden außerdem automatisch aktiviert, wenn die Anfrage passt („leg mir einen Step an, der …“).
+
 | Command | Beschreibung | Beispiel |
 |---|---|---|
 | `/create-flow` | Flow-Klasse mit FlowBuilder-DSL generieren | `/create-flow WeatherComfort CityRequestMessage WeatherReportMessage` |
@@ -44,7 +46,8 @@ Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe 
 | `/create-message` | Message-Klasse (init/data/return) generieren | `/create-message CityRequest init city:string` |
 | `/create-schedule` | Schedule-Klasse mit Cron-Ausdruck generieren | `/create-schedule WeatherComfort WeatherComfortFlow "0 * * * *"` |
 | `/create-projection` | Projection-Handler (Read Model / async Side-Effect) generieren | `/create-projection Order flow.order.v1 OrderValidatedMessage` |
-| `/analyze-flow` | Flow auf Fehler und Verbesserungen prüfen | `/analyze-flow WeatherComfortFlow` |
+| `/create-test` | FlowTestCase-Tests für Flow, Step oder Projection generieren (`--run` führt sie aus) | `/create-test WeatherComfortFlow --run` |
+| `/analyze-flow` | Flow auf Fehler und Verbesserungen prüfen (validiert per `php`, falls möglich) | `/analyze-flow WeatherComfortFlow` |
 
 ## Verwendung
 
@@ -73,6 +76,11 @@ Der `flowcrafter`-Skill wird automatisch aktiviert, sobald Flowcrafter-Begriffe 
 /analyze-flow OrderProcessingFlow
 ```
 
+**5. Tests erzeugen:**
+```
+/create-test OrderProcessingFlow --run
+```
+
 ### Flow ohne externen Input (EmptyInitMessage)
 
 Falls ein Flow keinen externen Input braucht (z.B. scheduler-getriggert), einfach beschreiben — Claude verwendet automatisch die eingebaute `EmptyInitMessage`:
@@ -99,6 +107,7 @@ Analysiert alle `*Flow.php`-Dateien im Projekt und listet Probleme sowie Verbess
 
 - [Claude Code](https://claude.ai/code) CLI
 - PHP-Projekt mit `wundii/flowcrafter`
+- Optional: lokales `php` für die echte Schema-Validierung in `/analyze-flow` und `/create-flow` sowie `vendor/bin/phpunit` für `/create-test --run`
 
 ## Lizenz
 

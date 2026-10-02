@@ -1,23 +1,24 @@
 ---
 name: flowcrafter
 description: >
-  This skill should be used when the user discusses Flowcrafter, mentions
-  "FlowBuilder", "StepInterface", "FlowInterface", "MessageInitInterface",
-  "MessageDataInterface", "MessageReturnInterface", "AbstractMessage",
-  "AbstractStep", "AbstractSchedule", "FlowSchedule", "FlowEphemeral", "FlowRunner", "FlowObserver",
-  "FlowProjection", "ProjectionHandlerInterface", "ProjectionWorker",
-  asks to "create a flow", "add a step", "wire up messages",
-  "build a workflow", "build a processing pipeline", "define a schedule",
-  "build a read model", "add a projection",
-  or when PHP files named *Flow.php, *Step.php, *Message.php,
-  *Schedule.php, or *Projection.php are being discussed. Also trigger when the user
-  imports from "Wundii\Flowcrafter\" namespace.
-version: 1.0.0
+  Framework knowledge for the Flowcrafter PHP workflow engine (wundii/flowcrafter).
+  Use whenever the user discusses Flowcrafter or mentions "FlowBuilder",
+  "StepInterface", "FlowInterface", "MessageInitInterface", "MessageDataInterface",
+  "MessageReturnInterface", "AbstractMessage", "AbstractStep", "AbstractSchedule",
+  "EmptyInitMessage", "FlowSchedule", "FlowEphemeral", "FlowGroup", "FlowRunner",
+  "FlowObserver", "FlowTestCase", "DependencyRegistry", "FlowProjection",
+  "ProjectionHandlerInterface", "ProjectionWorker", when PHP files named *Flow.php,
+  *Step.php, *Message.php, *Schedule.php or *Projection.php in a Flowcrafter project
+  are being discussed or edited, or when code imports from the "Wundii\Flowcrafter\"
+  namespace. Provides concepts, validation rules and code defaults used by the
+  create-*/analyze-flow skills.
 ---
 
 # Flowcrafter Framework Context
 
-Flowcrafter (`wundii/flowcrafter`) ist ein PHP-Message-Driven-Workflow-Engine. Wende dieses Wissen auf alle Code-Generierungs-, Review- und Analyse-Aufgaben in einem Flowcrafter-Projekt an.
+Flowcrafter (`wundii/flowcrafter`) ist eine PHP-Message-Driven-Workflow-Engine. Wende dieses Wissen auf alle Code-Generierungs-, Review- und Analyse-Aufgaben in einem Flowcrafter-Projekt an.
+
+> **Source of Truth:** Das Paket liefert seine Doku mit. Falls `vendor/wundii/flowcrafter/docs/` existiert, bei Unklarheiten bzw. Detailfragen dort nachlesen (`concepts.md`, `testing.md`, `configuration.md`) — sie passt immer zur installierten Version. Bei Widerspruch zwischen diesem Skill und dem Code im `vendor/` gilt der Code.
 
 ## Core-Konzepte
 
@@ -28,10 +29,10 @@ Typisierte, immutable Datenobjekte. Drei Rollen:
 | Interface | Namespace | Zweck |
 |---|---|---|
 | `MessageInitInterface` | `Wundii\Flowcrafter\Interface\MessageInitInterface` | Eintrittspunkt des Flows. Auslöser-Input. |
-| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten zwischen Steps. Auf dem Hauptpfad zur ReturnMessage muss jede DataMessage konsumiert werden. Auf Seitenzweigen kann sie terminal enden. |
-| `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Output des Flows. Wird an den Aufrufer zurückgegeben. |
+| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten zwischen Steps. **Muss immer** von mindestens einem Step im Flow konsumiert werden — auch auf Seitenzweigen (sonst schlägt `build()` fehl). |
+| `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Output des Flows. Wird an den Aufrufer zurückgegeben. Wird nicht weiter konsumiert. |
 
-Alle Messages extends `Wundii\Flowcrafter\AbstractMessage` und sind `readonly class` mit Constructor Property Promotion.
+Alle Messages extends `Wundii\Flowcrafter\AbstractMessage`. Da `AbstractMessage` eine `abstract readonly class` ist, **müssen** Messages `readonly class` sein (PHP ≥ 8.2), mit Constructor Property Promotion.
 
 Properties sind standardmäßig `public` — kein Getter nötig:
 
@@ -46,18 +47,24 @@ readonly class CityRequestMessage extends AbstractMessage implements MessageInit
 
 Nur auf `private` + Getter wechseln wenn der User es explizit wünscht.
 
-**Bei komplexen Messages** (viele Werte, verschachtelte DTOs): `wundii/data-mapper` verwenden — befüllt DataMessages inkl. typisierter DTOs direkt aus HTTP-Responses (JSON/Array/XML).
+**Serialisierung & Rehydrierung (Round-Trip):**
 
-**DTOs in Messages müssen `JsonSerializable` implementieren.** `AbstractMessage::jsonSerialize()` serialisiert alle promoted Properties via Reflection. Skalare Werte und Arrays werden automatisch korrekt serialisiert. Objekte (DTOs) dagegen brauchen `JsonSerializable`, da `json_encode` sonst leere Objekte oder Fehler produziert.
+- `AbstractMessage::jsonSerialize()` serialisiert **nur promoted Constructor-Properties** (via Reflection). Nicht-promoted oder berechnete Properties gehen verloren.
+- Beim Laden aus Storage/Queue (Observer, Re-Runs, `runOnce`, `includeSteps`) wird die Message per `wundii/data-mapper` mit `ApproachEnum::CONSTRUCTOR` wiederhergestellt. Die serialisierten Keys müssen also den **Constructor-Parameternamen** entsprechen.
+- **DTOs in Messages** müssen denselben Round-Trip überstehen: entweder `public` promoted Properties, oder `JsonSerializable` mit Keys, die exakt den Constructor-Parameternamen des DTOs entsprechen. `DateTimeInterface` wird beim Laden standardmäßig auf `DateTime` gemappt.
+- Das Umbenennen einer Property ändert den Message-Hash → ändert den Schema-Hash des Flows (siehe Versionierung).
+
+**Bei komplexen Messages** (viele Werte, verschachtelte DTOs): `wundii/data-mapper` verwenden — befüllt DataMessages inkl. typisierter DTOs direkt aus HTTP-Responses (JSON/Array/XML). Details: `references/data-mapper.md`.
 
 ### Steps
 
 Zustandslose Verarbeitungseinheiten. Jeder Step:
 
 - Implementiert `Wundii\Flowcrafter\Interface\StepInterface` **oder** extends `Wundii\Flowcrafter\AbstractStep` (das `StepInterface` implementiert)
-- Deklariert verbrauchte Messages als typisierte Constructor-Parameter (auto-injected)
-- Deklariert Service-Abhängigkeiten als weitere Constructor-Parameter (per DI-Container)
-- Gibt mögliche Return-Types in `returnTypes(): array` als FQCN-Array an
+- **Hat einen Constructor** (ohne Constructor wirft `addStep()`)
+- Deklariert verbrauchte Messages als typisierte Constructor-Parameter (auto-injected; erkannt wird jeder Parametertyp, der `MessageInterface` implementiert — Union-Types werden ignoriert)
+- Deklariert Service-Abhängigkeiten als weitere Constructor-Parameter (per Flowcrafter-DI-Container, siehe DI)
+- Gibt mögliche Return-Types in `returnTypes(): array` als FQCN-Array an — **konstantes Array**, darf nicht auf `$this`-Properties zugreifen (wird auf einer Instanz ohne Constructor-Aufruf ermittelt)
 - Implementiert `process()` mit der eigentlichen Logik
 
 **Step Return-Types:**
@@ -65,8 +72,10 @@ Zustandslose Verarbeitungseinheiten. Jeder Step:
 | Return-Type              | Verhalten                                                                                      |
 |--------------------------|------------------------------------------------------------------------------------------------|
 | `MessageDataInterface`   | Message wird im Flow abgelegt, der Runner triggert rekursiv alle Steps die diese Message konsumieren |
-| `MessageReturnInterface` | Flow-Ergebnis — nur der erste Return zählt, weitere werden ignoriert                           |
-| `bool`                   | Wird als `FlowResult` gespeichert, keine weitere Rekursion — Step-Zweig endet hier             |
+| `MessageReturnInterface` | Flow-Ergebnis — **nur die erste** produzierte Return-Message zählt, weitere werden ignoriert   |
+| `bool`                   | Wird als `FlowResult` gespeichert, keine weitere Rekursion. `false` → Flow-Status `WARNING`     |
+
+**Exceptions:** Wirft ein Step (nach Erschöpfung der Retries), bricht der **gesamte** Flow-Run ab — auch die noch nicht ausgeführten Steps der Hauptkette. Das gilt ebenso für Seitenzweige.
 
 ```php
 class FetchWeatherStep implements StepInterface
@@ -88,37 +97,22 @@ class FetchWeatherStep implements StepInterface
 }
 ```
 
-**Sub-Flows aus einem Step triggern:** Extends ein Step `AbstractStep`, stehen ihm — analog zu `AbstractSchedule` — `$this->enqueue()` (async via Queue) und `$this->run()` (synchron, blockierend) zur Verfügung, um aus `process()` heraus einen weiteren Flow zu starten:
+**Sub-Flows aus einem Step triggern:** Extends ein Step `AbstractStep`, stehen ihm — analog zu `AbstractSchedule` — `$this->enqueue()` (async via Queue) und `$this->run()` (synchron, blockierend) zur Verfügung:
 
 ```php
-use Wundii\Flowcrafter\AbstractStep;
-
-class DispatchOrderStep extends AbstractStep
-{
-    public function __construct(
-        private readonly OrderValidatedMessage $order,
-    ) {}
-
-    /** @return class-string[] */
-    public function returnTypes(): array
-    {
-        return [OrderDispatchedMessage::class];
-    }
-
-    public function process(): MessageDataInterface
-    {
-        $this->enqueue(
-            flowSource: ShipmentFlow::class,
-            message: new ShipmentRequestMessage($this->order->orderId()),
-            // flowSubject: $this->order->orderId(),
-        );
-
-        return new OrderDispatchedMessage(/* ... */);
-    }
-}
+$this->enqueue(
+    flowSource: ShipmentFlow::class,                           // Pflicht
+    message: new ShipmentRequestMessage($this->order->orderId), // Pflicht: Init-Message des Sub-Flows
+    // flowHash: null,      // bestehende Instanz erneut ausführen
+    // flowSubject: null,   // Business-Key
+    // includeSteps: [],    // nur bei enqueue()
+);
 ```
 
-Beide Methoden haben dieselbe Signatur wie bei `AbstractSchedule`. `StepInterface` direkt zu implementieren reicht weiterhin — `AbstractStep` nur verwenden, wenn der Step einen weiteren Flow anstoßen soll.
+- `enqueue()` braucht eine Queue im Runner — ohne wirft es `RuntimeException('Queue is not set.')` (in Tests: `InMemoryQueue`).
+- `run()` hat keinen Zyklenschutz über Flow-Grenzen — rekursive Ketten können den Stack sprengen.
+- `AbstractStep` liefert zusätzlich `getFlowHash()`, `getFlowRuntimeHash()`, `getFlowType()`, `getFlowSchemaHash()`, `getFlowSubject()`.
+- `StepInterface` direkt zu implementieren bleibt der Default — `AbstractStep` nur, wenn der Step Flow-Metadaten oder Sub-Flows braucht.
 
 ### Step-Design-Leitfaden
 
@@ -129,15 +123,16 @@ Beide Methoden haben dieselbe Signatur wie bei `AbstractSchedule`. `StepInterfac
 1. Aufgaben identifizieren und linear als Steps auflisten
 2. Pro Step fragen: *Ist das Ergebnis relevant für die ReturnMessage?*
    - **Ja** → Hauptkette (Step produziert DataMessage die downstream konsumiert wird)
-   - **Nein** → Seitenzweig (Step konsumiert eine Message aus der Hauptkette, Ergebnis endet terminal)
+   - **Nein** → Seitenzweig (Step konsumiert eine Message aus der Hauptkette und endet mit `bool`)
 
-**Return-Type für Seitenzweige:**
+**Seitenzweige enden mit `bool`.** Eine DataMessage als Ende ist nicht erlaubt (unkonsumiert → `build()` schlägt fehl). Eine zweite `MessageReturnInterface` als Ende ist technisch möglich, aber gefährlich: läuft der Seitenzweig vor der Hauptkette, wird **seine** Message zum Flow-Ergebnis („erste Return-Message gewinnt“). Soll das Ergebnis eines Seitenzweigs inspizierbar sein, die Details per Ausgabe/Logging oder Projection sichtbar machen — nicht per Return-Message.
 
-| Situation                                        | Return-Type      |
-|--------------------------------------------------|------------------|
-| Simpel, selbsterklärend (Datei auf Blob legen)   | `bool`           |
-| Ergebnis soll inspizierbar sein (Datenquelle befüllt → sehen was geschrieben wurde) | Terminale Message |
-| Benachrichtigung (ntfy, E-Mail)                  | Judgment-Call — `bool` oder terminale Message je nach Debug-Bedarf |
+| Situation                                        | Return                                       |
+|--------------------------------------------------|----------------------------------------------|
+| Seiteneffekt erfolgreich / nicht nötig           | `true`                                       |
+| Seiteneffekt fehlgeschlagen, Flow soll weiterlaufen | Exception im Step fangen → `false` (`WARNING`) |
+| Fehler soll den Flow abbrechen                   | Exception werfen (`FAILED`)                  |
+| Seiteneffekt darf bei Re-Runs nicht wiederholt werden (Zahlung, Mail) | `addStep(..., runOnce: true)` |
 
 **Convergence-Pattern:**
 
@@ -151,12 +146,14 @@ m1 → s1 → m2 → s2 (externer Service) → m3 ─┐
 
 s4 wird erst ausgeführt wenn beide Aufbereitungen (m3, m4) abgeschlossen sind.
 
+**Ein Message-Typ = ein Produzent.** Zwei Steps im selben Flow dürfen nicht denselben Message-Typ produzieren. `FlowBuilder` prüft das **nicht** — es muss beim Entwurf (und in `analyze-flow`) sichergestellt werden.
+
 ### Flows
 
 Workflow-Blueprints. Ein Flow:
 
 - Implementiert `Wundii\Flowcrafter\Interface\FlowInterface`
-- Deklariert `schema(): FlowSchema` via `FlowBuilder`-DSL
+- Deklariert `public static function schema(): FlowSchema` via `FlowBuilder`-DSL
 - Hat einen Type-String im Format `flow.<name>.v<N>` (Pflicht!)
 - Verbindet Init-Message → Steps → Return-Message
 - **Ein Flow = ein fachliches Ziel.** Kann viele Steps haben, aber nicht mehrere unabhängige Fachlichkeiten mischen.
@@ -188,7 +185,7 @@ Cron-gesteuerte Flow-Starter. Ein Schedule:
 - Extends `Wundii\Flowcrafter\Schedule\AbstractSchedule`
 - Ist mit `#[Wundii\Flowcrafter\Attribute\FlowSchedule]` dekoriert
 - Implementiert `process(): void`
-- Verwendet `$this->enqueue()` (async) oder `$this->run()` (sync)
+- Verwendet `$this->enqueue()` (async, empfohlen) oder `$this->run()` (sync) — gleiche Signatur wie bei `AbstractStep`
 
 ```php
 #[FlowSchedule('* * * * *', name: 'weather-comfort-schedule')]
@@ -211,9 +208,9 @@ Asynchrone, entkoppelte Verarbeitung der Messages eines Flows — für Read Mode
 
 - Implementiert `Wundii\Flowcrafter\Interface\ProjectionHandlerInterface`
 - Ist mit `#[Wundii\Flowcrafter\Attribute\FlowProjection(flowTypes)]` dekoriert (ein oder mehrere Flow-Type-Strings; pro Flow-Typ genau **ein** Handler)
-- Bindet Methoden per `#[Wundii\Flowcrafter\Attribute\FlowProjectionMessage(MessageSource::class)]` an Message-Sources
+- Bindet `public` Methoden per `#[Wundii\Flowcrafter\Attribute\FlowProjectionMessage(MessageSource::class)]` an Message-Sources
 - Jede Methode bekommt eine `Wundii\Flowcrafter\FlowMessageReadonly` (die Original-Message wird **nicht** instanziiert)
-- Daten-Zugriff: `$flowMessage->getMessage()->getRawData()` liefert `array<string, mixed>`; Metadaten via `getFlowHash()`, `getFlowType()`, `getMessageSource()`, `getTime()`
+- Daten-Zugriff: `$flowMessage->getMessage()->getRawData()` liefert `array<string, mixed>`; Metadaten via `getHash()` (eindeutig pro Message, für Idempotenz), `getFlowHash()`, `getFlowType()`, `getMessageSource()`, `getTime()`
 
 ```php
 #[FlowProjection('flow.order.v1')]
@@ -228,7 +225,9 @@ class OrderProjection implements ProjectionHandlerInterface
 }
 ```
 
-Der `FlowRunner` schreibt jede finalisierte `FlowMessage` inkrementell in die Projection-Queue — aber nur, wenn ein Handler den Flow-Typ abonniert. Der `ProjectionWorker` (`vendor/bin/flowcrafter projection:worker`) arbeitet die Queue ab. **At-least-once**: Handler-Methoden müssen idempotent sein; eine geworfene Exception wird als `ProjectionException` persistiert und die Message dennoch acked. Handler werden automatisch aus dem Composer-Classmap entdeckt.
+Der `FlowRunner` schreibt jede finalisierte `FlowMessage` inkrementell in die Projection-Queue — aber nur, wenn ein Handler den Flow-Typ abonniert. Der `ProjectionWorker` (`vendor/bin/flowcrafter projection:worker`) arbeitet die Queue ab. **At-least-once**: Handler-Methoden müssen idempotent sein; eine geworfene Exception wird als `ProjectionException` persistiert und die Message dennoch acked. Handler werden pro Worker-Prozess einmal gebaut — keinen Zustand zwischen Messages halten.
+
+**Achtung bei Versions-Bump:** `#[FlowProjection]` abonniert exakte Type-Strings. Wird `flow.order.v1` → `v2`, muss der neue Typ im Attribut ergänzt werden — sonst wird der neue Flow stillschweigend nicht mehr projiziert.
 
 ## FlowBuilder DSL
 
@@ -240,6 +239,7 @@ $flowBuilder = new FlowBuilder(
 );
 $flowBuilder->addStep(StepA::class);
 $flowBuilder->addStep(StepB::class, retries: 3, delay: 500);
+$flowBuilder->addStep(ChargeStep::class, runOnce: true);
 return $flowBuilder->build();
 ```
 
@@ -247,27 +247,62 @@ return $flowBuilder->build();
 
 | Parameter | Typ | Default | Beschreibung |
 |---|---|---|---|
-| `stepSource` | `class-string` | — | Step-Klasse (Pflicht) |
-| `retries` | `int` | `0` | Zusätzliche Versuche bei Fehler (0 = kein Retry) |
-| `delay` | `int` | `200` | Wartezeit in ms zwischen Retries |
+| `step` | `class-string<StepInterface>` | — | Step-Klasse (Pflicht, positional übergeben) |
+| `retries` | `int` | `0` | Zusätzliche Versuche bei Exception (0 = kein Retry) |
+| `delay` | `int` | `200` | Wartezeit in ms zwischen Retries (blockierend) |
+| `runOnce` | `bool` | `false` | Bei Re-Runs einer bestehenden Instanz wird das gespeicherte Ergebnis wiederverwendet statt den Step erneut auszuführen — für Seiteneffekte, die nicht doppelt passieren dürfen (Zahlung, E-Mail, externe Buchung) |
 
-`retries` und `delay` fließen in den Schema-Hash ein — eine Änderung erzwingt eine neue Flow-Version.
+`retries`, `delay` und `runOnce` fließen in den Schema-Hash ein — eine Änderung erfordert eine neue Flow-Version.
 
-## FlowBuilder Validierungsregeln (bei `build()`)
+## FlowBuilder Validierungsregeln
+
+Im Constructor bzw. bei `addStep()`:
 
 1. **Type-String-Format**: muss `/^flow\..+\.v\d+$/` matchen
-2. **Init-Message konsumiert**: mindestens ein Step muss die Init-Message als Constructor-Parameter haben
+2. **Init/Return-Klassen**: implementieren `MessageInitInterface` bzw. `MessageReturnInterface`
 3. **Keine Duplikate**: dieselbe Step-Klasse darf nicht zweimal per `addStep()` hinzugefügt werden
-4. **Kein Zyklus**: kein Zyklus im Message-Dependency-Graph
-5. **Alle Steps erreichbar**: jeder Step muss vom Init-Step aus über Message-Ketten erreichbar sein
-6. **Hauptpfad zur ReturnMessage intakt**: Es muss mindestens ein vollständiger Pfad von InitMessage zur ReturnMessage existieren — jede DataMessage auf diesem Pfad muss downstream konsumiert werden. DataMessages auf Seitenzweigen dürfen terminal enden (nicht konsumiert, bool-Return)
+
+Bei `build()`:
+
+4. **Init-Message konsumiert**: mindestens ein Step hat die Init-Message als Constructor-Parameter
+5. **Return-Message produziert**: falls deklariert, steht sie in `returnTypes()` mindestens eines Steps
+6. **Kein Zyklus** im Step-Graph (DFS)
+7. **Alle Steps erreichbar** vom Init-Step aus (BFS über Message-Ketten)
+8. **Keine hängenden DataMessages**: jede `MessageDataInterface` in irgendeinem `returnTypes()` wird von mindestens einem Step konsumiert — **ohne Ausnahme für Seitenzweige**
+
+Nicht validiert (Konvention, manuell prüfen): ein Produzent pro Message-Typ, nur eine mögliche Return-Message.
+
+Details und Fehlermeldungen: `../create-flow/references/flowbuilder-validation.md`
 
 ## Flow-Attribute
 
-- **`#[FlowEphemeral(expiryDays: 14)]`** — Flow ohne Primary-Storage-Persistierung, nur SQLite. Für Health-Checks, Monitoring, temporäre Flows. Details: `references/framework-concepts.md`
-- **`#[FlowGroup('name')]`** — Gruppiert Flows im Dashboard. Details: `references/framework-concepts.md`
+- **`#[FlowEphemeral(expiryDays: 14)]`** — Flow ohne Primary-Storage-Persistierung, nur SQLite-Service-Index. Für Health-Checks, Monitoring, temporäre Flows. Details: `references/framework-concepts.md`
+- **`#[FlowGroup('name')]`** — Gruppiert Flows im Dashboard (beeinflusst den Schema-Hash nicht). Details: `references/framework-concepts.md`
 
 Beide nur hinzufügen wenn der User es wünscht oder das Projekt sie bereits verwendet.
+
+## EmptyInitMessage — Flow ohne externen Input
+
+Braucht ein Flow keinen externen Input (z.B. rein scheduler-getriggert), **keine eigene Init-Message erstellen**, sondern `Wundii\Flowcrafter\EmptyInitMessage` verwenden. Im ersten Step **muss** der Parameter `public readonly` sein (nicht `private`), damit Rector den scheinbar unbenutzten Parameter nicht entfernt:
+
+```php
+use Wundii\Flowcrafter\EmptyInitMessage;
+
+// Flow
+$flowBuilder = new FlowBuilder('flow.my-flow.v1', EmptyInitMessage::class);
+
+// Erster Step
+class MyFirstStep implements StepInterface
+{
+    public function __construct(
+        public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
+    ) {}
+}
+```
+
+## Dependency Injection
+
+Flowcrafter baut **immer seinen eigenen** Symfony-`ContainerBuilder` — auch in Symfony-Anwendungen wird der App-Container **nicht** verwendet. Jeder Service, den ein Step, Schedule oder Projection-Handler im Constructor erwartet, muss deshalb in der `DependencyRegistry` registriert sein (Produktion: `flowcrafter.php` via `$flowcrafterConfig->setDependencyRegistry(...)`; Tests: `dependencyRegistry`-Parameter). Interfaces brauchen ein `bind()`. Details: `references/framework-concepts.md`.
 
 ## Code-Defaults
 
@@ -275,29 +310,31 @@ Beim Generieren von Flowcrafter-Code immer:
 
 - `declare(strict_types=1)` setzen
 - Messages: `readonly class` mit Constructor Property Promotion, Properties **`public`** (kein Getter)
-- Steps: reguläre Klasse, `private readonly` Constructor-Parameter
+- Steps: reguläre Klasse, `private readonly` Constructor-Parameter (Ausnahme: `EmptyInitMessage` → `public readonly`)
 - Flows: reguläre Klasse mit `public static function schema(): FlowSchema`
 - Schedules: reguläre Klasse mit `public function process(): void`
+- Projections: reguläre Klasse, Handler-Methoden `public function on{Name}(FlowMessageReadonly $flowMessage): void`
 - Alle Parameter und Return-Types explizit typisieren
-- Suffixe: `*Message`, `*Step`, `*Flow`, `*Schedule`
+- Suffixe: `*Message`, `*Step`, `*Flow`, `*Schedule`, `*Projection`
 
-## Directory-Conventions
-
-Symfony: `src/Flowcrafter/{Flows,Steps,Messages,Schedules}/` — Pure PHP: `src/{Flow,Step,Message,Schedule}/`
-Immer Glob verwenden um die tatsächliche Konvention im Projekt zu bestätigen!
-
-## Framework-Detection
+## Projekt-Kontext erkennen
 
 Vor der Code-Generierung in einem unbekannten Projekt:
 
-1. `composer.json` lesen — Flowcrafter-Paket bestätigen, PHP-Version prüfen
-2. `composer.json` auf `symfony/framework-bundle` prüfen → Symfony-Projekt
-3. Glob auf `src/**/*Flow.php` → bestehende Flows und Namespace-Muster
-4. Einen bestehenden Step und eine Message lesen → Namespace-Prefix und Code-Stil bestätigen
+1. `composer.json` lesen — `wundii/flowcrafter` bestätigen, PHP-Version und PSR-4-Autoload (Namespace ↔ Verzeichnis) ermitteln
+2. Glob auf `src/**/*Flow.php`, `src/**/*Step.php`, `src/**/*Message.php` → bestehende Verzeichnis- und Namespace-Konvention übernehmen
+3. Eine bestehende Datei des jeweiligen Typs lesen → Code-Stil (`final`, `readonly`, Imports) bestätigen
+4. `flowcrafter.php` lesen → wie werden Services in der `DependencyRegistry` registriert?
+
+Gibt es noch keine Flowcrafter-Klassen: `src/Flowcrafter/{Flows,Steps,Messages,Schedules,Projections}/` als Vorschlag nennen und den User bestätigen lassen.
+
+## Discovery
+
+Schedules und Projection-Handler werden automatisch gefunden (Composer-Classmap + PSR-4-Verzeichnisse außerhalb `vendor/`). Ergebnisse werden pro Prozess gecacht — neue Klassen werden erst nach Neustart von Scheduler/Worker erkannt (im `dev`-Modus automatisch per File-Watcher). Dateien in PSR-4-Verzeichnissen werden per `require_once` geladen und dürfen keine Seiteneffekte beim Laden haben.
 
 ## Weiterführende Details
 
-- `references/execution-model.md` — Rekursive Ausführung, Branching, Convergence, Regeln
-- `references/testing.md` — FlowTestCase, runFlow(), runStep(), Assertions, Branching-Pattern
+- `references/execution-model.md` — Rekursive Ausführung, Branching, Convergence, Fehlerverhalten
+- `references/testing.md` — FlowTestCase, runFlow(), runStep(), Assertions, Fehlerpfade, Queue, Projections
 - `references/data-mapper.md` — `wundii/data-mapper` für typsicheres Mapping von JSON/Array/XML → DTOs
-- `references/framework-concepts.md` — Message Routing, Lifecycle, Retry, Ephemeral, FlowGroup, EmptyInitMessage, DI, Testing, Imports
+- `references/framework-concepts.md` — Lifecycle, Retry, runOnce, Ephemeral, FlowGroup, Versionierung & Hashing, DI, Imports

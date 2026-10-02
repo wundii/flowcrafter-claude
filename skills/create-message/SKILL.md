@@ -4,7 +4,8 @@ description: >
   Generate a Flowcrafter Message class. Use when the user asks to
   "create a message", "add a message", "new init message", "new data message",
   "new return message", or wants to define a new MessageInitInterface,
-  MessageDataInterface, or MessageReturnInterface class for Flowcrafter.
+  MessageDataInterface, or MessageReturnInterface class for Flowcrafter
+  (wundii/flowcrafter).
 argument-hint: <message-name> <init|data|return> [property:type ...]
 allowed-tools: Read, Glob, Grep, Write
 ---
@@ -13,25 +14,32 @@ allowed-tools: Read, Glob, Grep, Write
 
 Generiere eine typisierte, immutable Message-Klasse für die Flowcrafter Workflow-Engine.
 
+Konzepte und Code-Defaults: `../flowcrafter/SKILL.md` (Abschnitte „Messages“ und „EmptyInitMessage“).
+
 ## Argumente
 
 Der User hat aufgerufen mit: $ARGUMENTS
 
 Parse als: `<message-name>` (Pflicht), `<init|data|return>` (Pflicht — Message-Typ), gefolgt von optionalen Property-Deklarationen im Format `name:type`. Falls der Message-Typ fehlt, frage den User.
 
+**Init-Message ohne Properties?** Dann keine Klasse erzeugen, sondern die eingebaute `Wundii\Flowcrafter\EmptyInitMessage` empfehlen (siehe `../flowcrafter/SKILL.md` → „EmptyInitMessage“; im ersten Step `public readonly`).
+
 ## Message-Typen
 
 | Interface | Namespace | Zweck | Regel |
 |---|---|---|---|
 | `MessageInitInterface` | `Wundii\Flowcrafter\Interface\MessageInitInterface` | Flow-Eintrittspunkt | Genau eine pro Flow. Wird vom ersten Step konsumiert. |
-| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten | Muss von einem downstream Step konsumiert werden. |
-| `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Flow-Output | Genau eine pro Flow. Muss nicht weiter konsumiert werden. |
+| `MessageDataInterface` | `Wundii\Flowcrafter\Interface\MessageDataInterface` | Zwischendaten | **Muss** von mindestens einem Step konsumiert werden — auch auf Seitenzweigen. Genau ein produzierender Step pro Flow. |
+| `MessageReturnInterface` | `Wundii\Flowcrafter\Interface\MessageReturnInterface` | Terminaler Flow-Output | Genau eine pro Flow, produziert von der Hauptkette. Wird nicht weiter konsumiert. |
+
+Braucht ein Seitenzweig ein Ergebnis? Keine neue Message, sondern `bool` im Step.
 
 ## Schritt 1: Projekt-Kontext erkennen
 
 1. Glob auf `src/**/*Message.php` — bestehende Messages für Namespace und Directory
-2. Eine bestehende Message lesen und Namespace-Prefix sowie PHP-Version bestätigen
+2. Eine bestehende Message lesen und Namespace-Prefix sowie Stil (`final`, public vs. Getter) bestätigen
 3. Namespace aus `composer.json` PSR-4 Autoload ableiten falls keine Messages gefunden
+4. Prüfen ob eine Message mit gleichem Namen existiert
 
 ## Schritt 2: Message-Klasse generieren
 
@@ -60,9 +68,23 @@ readonly class {ClassName}Message extends AbstractMessage implements MessageInit
 
 Passe `MessageInitInterface` an den gewählten Typ an (`MessageDataInterface` / `MessageReturnInterface`).
 
+### Pflichtregeln (Serialisierung & Rehydrierung)
+
+Messages werden als JSON gespeichert und beim Laden (Observer, Re-Run, `runOnce`, `includeSteps`) per DataMapper **über den Constructor** wiederhergestellt. Daraus folgt:
+
+- `readonly class` ist Pflicht (`AbstractMessage` ist `abstract readonly`)
+- **Alle** Daten als promoted Constructor-Properties — nicht-promoted Properties werden nicht serialisiert
+- Keine Logik im Constructor, die beim Rehydrieren andere Werte erzeugt (z.B. `new DateTimeImmutable()` als Default)
+- Erlaubte Typen: Skalare, `?`-nullable, Arrays, Enums, `DateTimeInterface` (wird beim Laden standardmäßig als `DateTime` erzeugt), DTOs (siehe unten), andere Messages
+- Array-Properties mit Objekten per PHPDoc typisieren (`/** @param Item[] $items */`), damit der DataMapper die Elemente mappen kann
+- Property-Umbenennungen ändern den Message-Hash und damit den Schema-Hash aller Flows, die die Message nutzen → Flow-Version erhöhen
+
 ### DTOs als Message-Properties
 
-Wenn eine Message-Property ein Objekt (DTO) ist statt eines skalaren Werts, **muss dieses DTO `JsonSerializable` implementieren**. `AbstractMessage::jsonSerialize()` serialisiert promoted Properties via Reflection — Objekte ohne `JsonSerializable` werden von `json_encode` nicht korrekt serialisiert.
+Ein DTO muss denselben Round-Trip überstehen:
+
+- **Einfachster Weg:** `final readonly class` mit `public` promoted Properties — wird von `json_encode` direkt korrekt serialisiert.
+- **Mit `private` Properties:** `JsonSerializable` implementieren, und die Keys **exakt wie die Constructor-Parameter** benennen — sonst kann das DTO beim Laden nicht wiederhergestellt werden.
 
 ```php
 final readonly class DeviceState implements \JsonSerializable
@@ -72,15 +94,18 @@ final readonly class DeviceState implements \JsonSerializable
         private float $temperature,
     ) {}
 
+    /** @return array<string, mixed> */
     public function jsonSerialize(): array
     {
         return [
-            'name' => $this->name,
+            'name' => $this->name,               // Key = Constructor-Parametername
             'temperature' => $this->temperature,
         ];
     }
 }
 ```
+
+Bei vielen Feldern oder Mapping aus externen APIs: `wundii/data-mapper` (`../flowcrafter/references/data-mapper.md`).
 
 ### Nur auf Wunsch des Users: `private` + Getter
 
@@ -98,41 +123,18 @@ readonly class {ClassName}Message extends AbstractMessage implements MessageInit
 }
 ```
 
-## Schritt 3: EmptyInitMessage — kein Input benötigt
+`private` promoted Properties werden ebenfalls serialisiert (Reflection) — der Round-Trip funktioniert.
 
-Falls ein Flow keinen externen Input braucht, **keine eigene Init-Message erstellen**. Stattdessen die eingebaute `Wundii\Flowcrafter\EmptyInitMessage` verwenden.
+## Schritt 3: Dateiname und Platzierung
 
-Im Flow:
-```php
-use Wundii\Flowcrafter\EmptyInitMessage;
-
-$flowBuilder = new FlowBuilder(
-    'flow.my-flow.v1',
-    EmptyInitMessage::class,
-    // kein Return-Message nötig
-);
-```
-
-Im ersten Step: das `EmptyInitMessage`-Property **muss `public readonly`** sein (nicht `private`), damit statische Analyse-Tools (z.B. Rector) den "unbenutzten" Parameter nicht entfernen:
-
-```php
-class MyFirstStep implements StepInterface
-{
-    public function __construct(
-        public readonly EmptyInitMessage $init,  // public readonly — Pflicht!
-    ) {}
-}
-```
-
-## Schritt 4: Dateiname und Platzierung
-
-- Directory: bestehendes Pattern, sonst `src/Flowcrafter/Messages/` (Symfony) oder `src/Message/` (pure PHP)
+- Directory: bestehendes Pattern; gibt es keins, `src/Flowcrafter/Messages/` vorschlagen
 - Klassenname: PascalCase + `Message`-Suffix (z.B. `city-request` → `CityRequestMessage`)
 - Dateiname: `{ClassName}Message.php`
 
-## Schritt 5: Output
+## Schritt 4: Output
 
 1. Generierten Code anzeigen und Interface-Wahl begründen
 2. Datei schreiben mit dem Write-Tool
-3. Hinweisen welche Steps diese Message konsumieren sollten
-4. Falls Init- oder Return-Message: `/create-flow` empfehlen um den Flow zu definieren
+3. Hinweisen welcher Step diese Message produzieren und welche Steps sie konsumieren sollten
+4. Falls Init- oder Return-Message: `create-flow` empfehlen um den Flow zu definieren
+5. Falls eine bestehende Message geändert wurde: betroffene Flows nennen (Grep auf den Klassennamen) und auf Versionserhöhung hinweisen

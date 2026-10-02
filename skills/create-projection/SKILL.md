@@ -5,9 +5,10 @@ description: >
   "create a projection", "add a projection", "new projection handler",
   "build a read model", "project flow messages", "add FlowProjection",
   "react to flow messages async", or wants to implement a
-  ProjectionHandlerInterface class that consumes a Flow's messages asynchronously.
+  ProjectionHandlerInterface class that consumes a Flowcrafter (wundii/flowcrafter)
+  Flow's messages asynchronously.
 argument-hint: <projection-name> <flow-type-or-class> [message-class ...]
-allowed-tools: Read, Glob, Grep, Write
+allowed-tools: Read, Glob, Grep, Write, Edit
 ---
 
 # Create Flowcrafter Projection
@@ -31,14 +32,14 @@ Parse als: `<projection-name>` (PascalCase, `Projection`-Suffix wird hinzugefüg
 2. Falls vorhanden, eine bestehende Projection lesen und das Pattern bestätigen (Namespace-Prefix, Klassen-Stil, Methoden-Naming wie `onValidated`)
 3. Den referenzierten Flow lokalisieren (Glob auf `*{FlowClass}.php`) und ermitteln:
    - Den exakten Flow-Type-String aus `FlowBuilder('flow.<name>.v<N>', ...)`
-   - Die Message-Klassen (Init/Data/Return), die als Sources in Frage kommen
-4. `composer.json` auf Symfony prüfen (Directory-Konvention)
+   - Die Message-Klassen (Init/Data/Return), die als Sources in Frage kommen, und deren Property-Namen (= Keys in `getRawData()`)
+4. **Prüfen ob bereits ein Handler den Flow-Typ abonniert** (Grep `#[FlowProjection` + Type-String). Falls ja: die neue Methode dort per Edit ergänzen statt eine zweite Klasse anzulegen — zwei Handler für denselben Flow-Typ werfen bei der Discovery
 
 ## Schritt 2: FlowProjection Attribut (Klasse)
 
 ```php
-#[FlowProjection('flow.order.v1')]            // einzelner Flow-Typ
-#[FlowProjection(['flow.order.v1', 'flow.order.v2'])]  // mehrere Flow-Typen
+#[FlowProjection('flow.order.v1')]                     // einzelner Flow-Typ
+#[FlowProjection(['flow.order.v1', 'flow.order.v2'])]  // mehrere Flow-Typen (z.B. über Versionen hinweg)
 ```
 
 | Regel | Bedeutung |
@@ -46,10 +47,11 @@ Parse als: `<projection-name>` (PascalCase, `Projection`-Suffix wird hinzugefüg
 | Mindestens ein Flow-Typ | leeres Array wirft bei der Discovery |
 | Ein Handler pro Flow-Typ | derselbe Flow-Typ darf **nicht** von zwei Handlern abonniert werden |
 | Type-String, nicht Klasse | das Attribut erwartet den Type-String (`flow.order.v1`), nicht den FQCN des Flows |
+| Exakte Version | `flow.order.v1` empfängt **keine** Messages von `flow.order.v2` — bei Versions-Bumps beide Typen listen, solange alte Instanzen noch laufen |
 
 ## Schritt 3: FlowProjectionMessage Attribut (Methode)
 
-Jede Handler-Methode bindet sich per `#[FlowProjectionMessage(MessageSource::class)]` an genau einen Message-Source. Regeln (werden bei der Discovery validiert):
+Jede Handler-Methode bindet sich per `#[FlowProjectionMessage(MessageSource::class)]` an einen Message-Source. Regeln (werden bei der Discovery validiert):
 
 - Die Methode muss `public` sein
 - Sie muss **einen Parameter vom Typ `FlowMessageReadonly`** deklarieren
@@ -65,33 +67,39 @@ Der Handler bekommt eine `FlowMessageReadonly` — die Original-Message-Klasse w
 public function onValidated(FlowMessageReadonly $flowMessage): void
 {
     $data = $flowMessage->getMessage()->getRawData();  // array<string, mixed> der Properties
-    $flowMessage->getFlowHash();        // Flow-Instanz-Hash
+    $flowMessage->getHash();            // eindeutiger Hash dieser FlowMessage → Idempotenz-Key
+    $flowMessage->getFlowHash();        // Flow-Instanz-Hash (gleich für alle Messages eines Flows)
     $flowMessage->getFlowType();        // z.B. 'flow.order.v1'
     $flowMessage->getMessageSource();   // FQCN der Original-Message
     $flowMessage->getTime();            // DateTimeImmutable
 }
 ```
 
-`getMessage()` liefert eine `ReadonlyMessage`; `getRawData(): array` enthält die deserialisierten Properties. Typisierte Eigenschaften nicht annehmen — auf das Array zugreifen.
+`getMessage()` liefert eine `ReadonlyMessage`; `getRawData(): array` enthält die serialisierten Properties (Keys = Property-Namen, DTOs als verschachtelte Arrays, Datumswerte als Strings). Typisierte Eigenschaften nicht annehmen — auf das Array zugreifen und Werte selbst casten.
+
+`getMessageHash()` ist **nicht** eindeutig pro Message — es ist der Struktur-Hash der Message-Klasse. Nicht für Idempotenz verwenden.
 
 ## Schritt 4: Idempotenz (Pflicht)
 
-Die Projection-Queue ist **at-least-once**. Eine Message kann mehrfach zugestellt werden, und ein Fehler in einer Methode acked die Message trotzdem (wird als `ProjectionException` persistiert, blockiert die Queue nicht). Handler-Methoden **müssen idempotent** sein:
+Die Projection-Queue ist **at-least-once**. Eine Message kann mehrfach zugestellt werden, und ein Fehler in einer Methode acked die Message trotzdem (wird als `ProjectionException` persistiert, blockiert die Queue nicht, wird **nicht** erneut zugestellt). Handler-Methoden **müssen idempotent** sein:
 
-- Upserts statt blinder Inserts (z.B. `INSERT ... ON DUPLICATE KEY UPDATE` / `ON CONFLICT`)
-- Vor Side-Effects prüfen, ob bereits ausgeführt (z.B. anhand `getMessageHash()` / `getFlowHash()`)
+- Upserts statt blinder Inserts (z.B. `INSERT ... ON DUPLICATE KEY UPDATE` / `ON CONFLICT`), Schlüssel aus fachlicher ID oder `getFlowHash()`
+- Vor Side-Effects prüfen, ob bereits ausgeführt — Idempotenz-Key: `getHash()`
+- Fehler, die nicht verloren gehen dürfen, selbst behandeln (Retry im Handler oder eigene Fehler-Tabelle)
 
 Diesen Hinweis im generierten Code als Kommentar setzen.
 
 ## Schritt 5: Service-Abhängigkeiten (DI)
 
-Handler werden über den Symfony-Container instanziiert (Autowiring + `DependencyRegistry` aus der `flowcrafter.php`, gesetzt via `setDependencyRegistry()`). Service-Dependencies einfach als `private readonly` Constructor-Parameter deklarieren:
+Handler werden über den Flowcrafter-eigenen Container instanziiert (nicht den einer Symfony-App). Service-Dependencies als `private readonly` Constructor-Parameter deklarieren — sie müssen in der `DependencyRegistry` (`flowcrafter.php`, `setDependencyRegistry()`) registriert sein:
 
 ```php
 public function __construct(
     private readonly OrderReadModelRepository $repository,
 ) {}
 ```
+
+Handler werden **pro Worker-Prozess einmal** gebaut und wiederverwendet — keinen Zustand zwischen Messages in Properties halten.
 
 ## Schritt 6: Projection-Klasse generieren
 
@@ -121,18 +129,17 @@ class {ClassName}Projection implements ProjectionHandlerInterface
         $data = $flowMessage->getMessage()->getRawData();
 
         // TODO: Read Model upserten / Side-Effect auslösen.
-        // Muss idempotent sein — die Queue ist at-least-once.
+        // Muss idempotent sein — die Queue ist at-least-once (Idempotenz-Key: $flowMessage->getHash()).
     }
 }
 ```
 
-Pro angegebenem Message-Source eine eigene `on{Name}()`-Methode erzeugen.
+Pro angegebenem Message-Source eine eigene `on{Name}()`-Methode erzeugen und die erwarteten Keys aus den Message-Properties im Code verwenden.
 
 ## Schritt 7: Output
 
 1. Generierten Code mit Erklärung anzeigen
-2. Den verwendeten Flow-Type-String gegen den Flow gegenprüfen (existiert er, stimmt die Version?)
-3. Prüfen ob die referenzierten Message-Klassen existieren
-4. Warnen falls bereits ein anderer Handler denselben Flow-Typ abonniert (Glob auf `*Projection.php` → `#[FlowProjection]`)
-5. Datei schreiben mit dem Write-Tool
-6. Hinweis: Der Worker läuft als eigener Prozess — `vendor/bin/flowcrafter projection:worker` (bzw. im Dev-Modus als überwachter Subprozess). Handler werden automatisch aus dem Composer-Classmap entdeckt; keine manuelle Registrierung nötig.
+2. Den verwendeten Flow-Type-String gegen den Flow gegenprüfen (existiert er, stimmt die **aktuelle** Version?)
+3. Prüfen ob die referenzierten Message-Klassen existieren und im Flow vorkommen
+4. Datei schreiben (Write bzw. Edit bei bestehendem Handler)
+5. Hinweis: Der Worker läuft als eigener Prozess — `vendor/bin/flowcrafter projection:worker` (bzw. im Dev-Modus als überwachter Subprozess). Handler werden automatisch entdeckt; ein laufender Worker muss nach dem Anlegen neu gestartet werden (im `dev`-Modus automatisch). Für Tests siehe `../flowcrafter/references/testing.md` → „Projection-Handler testen“
